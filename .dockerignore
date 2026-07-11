@@ -1,0 +1,7 @@
+**/target/
+**/.mvn/
+**/*.log
+.git/
+.idea/
+*.iml
+.vscode/

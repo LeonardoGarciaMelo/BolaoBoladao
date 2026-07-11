@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>br.com.bolaoboladao</groupId>
+        <artifactId>bolao-boladao</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>shared-contracts</artifactId>
+    <packaging>jar</packaging>
+
+    <name>shared-contracts</name>
+    <description>
+        DTOs de eventos (MatchEvent, BetEvent, WalletEvent, UserEvent) compartilhados entre
+        os serviços do bolão. Cada serviço depende deste módulo apenas para os contratos
+        de mensageria (Kafka), nunca para lógica de domínio interna de outro serviço.
+    </description>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
+            <version>3.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+</project>

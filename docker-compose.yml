@@ -1,0 +1,61 @@
+# docker-compose para o Perfil A (tudo em Docker).
+#
+# Cada serviço do bolão tem sua base de dados própria e segregada
+# (ver docs/arquitetura.md e ADR-001). Por enquanto só o partidas-service
+# está implementado; os demais (apostas, usuarios, carteira) e o Kafka
+# entram aqui à medida que o resto do grupo for entregando.
+#
+# Uso:
+#   docker compose up --build partidas-db partidas-service
+#   docker compose up -d partidas-db   # só o banco, pra rodar o serviço via IDE/mvn quarkus:dev
+
+services:
+
+  partidas-db:
+    image: postgres:16-alpine
+    container_name: bolao-partidas-db
+    environment:
+      POSTGRES_DB: partidas_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    ports:
+      - "5433:5432"
+    volumes:
+      - partidas_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d partidas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  partidas-service:
+    build:
+      context: .
+      dockerfile: partidas-service/Dockerfile
+    container_name: bolao-partidas-service
+    environment:
+      PARTIDAS_DB_URL: jdbc:postgresql://partidas-db:5432/partidas_db
+      PARTIDAS_DB_USER: bolao
+      PARTIDAS_DB_PASSWORD: bolao
+    ports:
+      - "8081:8081"
+    depends_on:
+      partidas-db:
+        condition: service_healthy
+
+  # --- placeholders para os próximos serviços do grupo ---
+  # apostas-db:
+  #   image: postgres:16-alpine
+  #   ...
+  # usuarios-db:
+  #   image: postgres:16-alpine
+  #   ...
+  # carteira-db:
+  #   image: postgres:16-alpine
+  #   ...
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.6.0
+  #   ...
+
+volumes:
+  partidas_db_data:
