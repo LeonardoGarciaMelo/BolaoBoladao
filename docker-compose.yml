@@ -1,13 +1,5 @@
-# docker-compose para o Perfil A (tudo em Docker).
-#
-# Cada serviço do bolão tem sua base de dados própria e segregada
-# (ver docs/arquitetura.md e ADR-001). Por enquanto só o partidas-service
-# está implementado; os demais (apostas, usuarios, carteira) e o Kafka
-# entram aqui à medida que o resto do grupo for entregando.
-#
-# Uso:
-#   docker compose up --build partidas-db partidas-service
-#   docker compose up -d partidas-db   # só o banco, pra rodar o serviço via IDE/mvn quarkus:dev
+# Perfil A: aplicações containerizadas. Gere as chaves de desenvolvimento
+# antes de subir (instruções no README): .secrets/jwt-private.pem e jwt-public.pem.
 
 services:
 
@@ -37,25 +29,83 @@ services:
       PARTIDAS_DB_URL: jdbc:postgresql://partidas-db:5432/partidas_db
       PARTIDAS_DB_USER: bolao
       PARTIDAS_DB_PASSWORD: bolao
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
     depends_on:
       partidas-db:
         condition: service_healthy
 
-  # --- placeholders para os próximos serviços do grupo ---
-  # apostas-db:
-  #   image: postgres:16-alpine
-  #   ...
-  # usuarios-db:
-  #   image: postgres:16-alpine
-  #   ...
-  # carteira-db:
-  #   image: postgres:16-alpine
-  #   ...
-  # kafka:
-  #   image: confluentinc/cp-kafka:7.6.0
-  #   ...
+  user-db:
+    image: postgres:16-alpine
+    container_name: bolao-user-db
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d user_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: bolao-user-service
+    environment:
+      USER_DB_URL: jdbc:postgresql://user-db:5432/user_db
+      USER_DB_USER: bolao
+      USER_DB_PASSWORD: bolao
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
+      JWT_EXPIRATION_SECONDS: 3600
+      JWT_PRIVATE_KEY_LOCATION: file:/run/secrets/jwt-private.pem
+    expose:
+      - "8082"
+    volumes:
+      - ./.secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: bolao-api-gateway
+    environment:
+      USER_SERVICE_URL: http://user-service:8082
+      PARTIDAS_SERVICE_URL: http://partidas-service:8081
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
+      WEB_ORIGIN: http://localhost:4321
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+    depends_on:
+      partidas-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        PUBLIC_API_BASE_URL: http://localhost:8080/api
+    container_name: bolao-web
+    ports:
+      - "4321:80"
+    depends_on:
+      api-gateway:
+        condition: service_started
 
 volumes:
   partidas_db_data:
+  user_db_data:

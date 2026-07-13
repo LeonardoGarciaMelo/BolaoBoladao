@@ -31,6 +31,20 @@ Cada serviço possui sua própria base relacional — não há acesso direto de 
 serviço ao banco de outro (ADR-001). A comunicação entre domínios acontece
 via eventos publicados no Kafka.
 
+## Autenticação e borda HTTP
+
+O `user-service` é o dono de cadastro e credenciais. Ele armazena apenas hash
+BCrypt de senha e assina access tokens JWT RS256 com uma chave privada montada
+em segredo. O `api-gateway` recebe somente a chave pública e é a única borda
+HTTP pública dos backends: deixa `POST /api/auth/register` e
+`POST /api/auth/login` públicos e exige JWT válido para `/api/partidas/**`.
+
+Na validação, o gateway confere algoritmo RS256, assinatura, issuer, audience
+e expiração. Ele não encaminha cabeçalhos de identidade do cliente; acrescenta
+`X-Authenticated-User-Id` a partir do `sub` validado. Em Compose,
+`partidas-service` e `user-service` permanecem na rede interna e não publicam
+portas no host.
+
 ## Domínio: Partidas (implementado)
 
 ### Entidades

@@ -166,6 +166,7 @@ Temporary Items
 
 ### Maven ###
 target/
+.secrets/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup

@@ -8,6 +8,8 @@ WORKDIR /workspace
 COPY pom.xml pom.xml
 COPY shared-contracts/pom.xml shared-contracts/pom.xml
 COPY partidas-service/pom.xml partidas-service/pom.xml
+COPY user-service/pom.xml user-service/pom.xml
+COPY api-gateway/pom.xml api-gateway/pom.xml
 
 # Resolve dependências (cache de camada)
 RUN mvn -q -pl shared-contracts,partidas-service -am dependency:go-offline || true

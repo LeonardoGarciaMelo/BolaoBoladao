@@ -30,15 +30,18 @@ API Gateway
 
 Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetura.md).
 
-**Status atual:** apenas o serviço de **Partidas** está implementado. Os
-demais (Apostas, Usuários, Carteira/Pagamentos) e a integração via Kafka
-serão adicionados pelos outros integrantes do grupo nas próximas entregas.
+**Status atual:** Partidas, Usuários e o API Gateway estão implementados.
+Apostas, Carteira/Pagamentos e a integração via Kafka permanecem para os
+próximos incrementos.
 
 ## Serviços
 
 | Serviço | Status | Stack | Porta |
 |---|---|---|---|
 | `partidas-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | 8081 |
+| `user-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | 8082 |
+| `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | 8080 |
+| `web` | ✅ implementado | Astro + Nginx | 4321 |
 | `apostas-service` | ⏳ pendente | — | — |
 | `usuarios-service` | ⏳ pendente | — | — |
 | `carteira-service` | ⏳ pendente | — | — |
@@ -58,16 +61,35 @@ enunciado — princípio anti-ambiente: a nota avalia a decisão, não a infra):
 **Perfil usado nesta entrega do `partidas-service`: A**, com fallback para B
 documentado abaixo.
 
-## Como rodar — `partidas-service`
+## Como rodar a plataforma completa
+
+Gere um par RSA somente para desenvolvimento. A chave privada não deve ser
+versionada nem compartilhada fora do ambiente local.
+
+```bash
+mkdir -p .secrets
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .secrets/jwt-private.pem
+openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
+docker compose up --build
+```
+
+A web estará em `http://localhost:4321` e a única API pública em
+`http://localhost:8080`. Os serviços de Partidas e Usuários não expõem portas
+no host quando executados pelo Compose.
+
+O fluxo é cadastro (`POST /api/auth/register`) → login
+(`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
+`GET /api/partidas`. O gateway valida assinatura RS256, issuer, audience e
+expiração antes de encaminhar a chamada. Access tokens duram uma hora e não há
+refresh token nesta versão.
+
+## Como rodar — `partidas-service` isoladamente
 
 ### Perfil A (Docker)
 
-```bash
-docker compose up --build partidas-db partidas-service
-```
-
-O serviço sobe em `http://localhost:8081`. Health check em
-`http://localhost:8081/q/health`.
+Use a plataforma completa descrita acima. Pelo Compose, Partidas não publica
+porta no host: a chamada autenticada é feita em
+`http://localhost:8080/api/partidas` pelo gateway.
 
 ### Perfil B (JVM, sem Docker)
 
