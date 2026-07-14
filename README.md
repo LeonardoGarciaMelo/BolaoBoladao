@@ -30,18 +30,20 @@ API Gateway
 
 Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetura.md).
 
-**Status atual:** apenas o serviço de **Partidas** está implementado. Os
-demais (Apostas, Usuários, Carteira/Pagamentos) e a integração via Kafka
-serão adicionados pelos outros integrantes do grupo nas próximas entregas.
+**Status atual:** Partidas, Usuários, Carteira/Pagamentos, API Gateway e a
+integração via Kafka estão implementados. Apostas permanece para os próximos
+incrementos.
 
 ## Serviços
 
 | Serviço | Status | Stack | Porta |
 |---|---|---|---|
-| `partidas-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | 8081 |
+| `partidas-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | interna (8081) |
+| `user-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | interna (8082) |
+| `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | pública (8080) |
+| `web` | ✅ implementado | Astro + Nginx | interna (80) |
+| `carteira-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Redis + Kafka | interna (8080) |
 | `apostas-service` | ⏳ pendente | — | — |
-| `usuarios-service` | ⏳ pendente | — | — |
-| `carteira-service` | ⏳ pendente | — | — |
 
 ## Perfis de execução
 
@@ -58,16 +60,39 @@ enunciado — princípio anti-ambiente: a nota avalia a decisão, não a infra):
 **Perfil usado nesta entrega do `partidas-service`: A**, com fallback para B
 documentado abaixo.
 
-## Como rodar — `partidas-service`
+## Como rodar a plataforma completa
+
+Gere um par RSA somente para desenvolvimento. A chave privada não deve ser
+versionada nem compartilhada fora do ambiente local.
+
+```bash
+mkdir -p .secrets
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .secrets/jwt-private.pem
+openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
+docker compose up --build
+```
+
+A web e a API estarão em `http://localhost:8080`: o gateway entrega a
+interface e encaminha as chamadas sob `/api`. Nenhum backend HTTP além do
+gateway publica porta no host quando executado pelo Compose.
+
+O fluxo é cadastro (`POST /api/auth/register`) → login
+(`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
+`GET /api/partidas`. O gateway valida assinatura RS256, issuer, audience e
+expiração antes de encaminhar a chamada. Access tokens duram uma hora e não há
+refresh token nesta versão.
+
+A carteira também é acessada exclusivamente com Bearer JWT pelo gateway:
+`GET /api/wallet/{userId}/balance` e
+`GET /api/wallet/{walletId}/statement?page=0&size=10`.
+
+## Como rodar — `partidas-service` isoladamente
 
 ### Perfil A (Docker)
 
-```bash
-docker compose up --build partidas-db partidas-service
-```
-
-O serviço sobe em `http://localhost:8081`. Health check em
-`http://localhost:8081/q/health`.
+Use a plataforma completa descrita acima. Pelo Compose, Partidas não publica
+porta no host: a chamada autenticada é feita em
+`http://localhost:8080/api/partidas` pelo gateway.
 
 ### Perfil B (JVM, sem Docker)
 
@@ -123,8 +148,10 @@ bolao-boladao/
 │   └── arquitetura.md
 ├── shared-contracts/        # DTOs/eventos compartilhados entre serviços
 ├── partidas-service/        # ✅ implementado
+├── user-service/            # ✅ implementado
+├── api-gateway/             # ✅ implementado (Quarkus + JWT)
+├── web/                     # ✅ implementado
 ├── apostas-service/         # ⏳ pendente
-├── usuarios-service/        # ⏳ pendente
-├── carteira-service/        # ⏳ pendente
+├── carteira-service/        # ✅ implementado
 └── pom.xml                  # parent, multi-módulo, profiles A/B/C
 ```

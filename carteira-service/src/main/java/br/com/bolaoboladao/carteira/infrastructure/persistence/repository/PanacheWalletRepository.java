@@ -34,7 +34,7 @@ public class PanacheWalletRepository implements WalletRepository, PanacheReposit
     }
 
     @Override
-    public List<Wallet> findAll() {
+    public List<Wallet> findAllWallets() {
         return listAll().stream()
                 .map(this::toDomain)
                 .toList();

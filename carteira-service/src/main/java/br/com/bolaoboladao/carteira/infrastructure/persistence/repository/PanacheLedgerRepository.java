@@ -19,8 +19,8 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
         var entity = new LedgerEntity();
         entity.setId(ledger.id());
         entity.setWalletId(ledger.walletId());
-        entity.setReason(ledger.reason().name());
-        entity.setOperation(ledger.operation().name());
+        entity.setReason(ledger.reason());
+        entity.setOperation(ledger.operation());
         entity.setAmount(ledger.amount());
         entity.setOccurredAt(ledger.occurredAt());
         persist(entity);
@@ -56,8 +56,8 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
         return new Ledger(
                 entity.getId(),
                 entity.getWalletId(),
-                Ledger.Reason.valueOf(entity.getReason()),
-                Ledger.Operation.valueOf(entity.getOperation()),
+                entity.getReason(),
+                entity.getOperation(),
                 entity.getAmount(),
                 entity.getOccurredAt()
         );

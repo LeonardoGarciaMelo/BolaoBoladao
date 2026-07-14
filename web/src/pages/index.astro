@@ -1,0 +1,12 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Bolão Boladão">
+  <main class="route-loading" aria-live="polite"><span></span>Preparando seu jogo…</main>
+</Layout>
+
+<script>
+  const token = sessionStorage.getItem("bolao.access-token");
+  window.location.replace(token ? "/partidas" : "/login");
+</script>

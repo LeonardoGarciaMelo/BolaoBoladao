@@ -24,7 +24,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Path("/partidas")
-@Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class MatchResource {
 
@@ -53,6 +52,7 @@ public class MatchResource {
     }
 
     @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     public Response create(@Valid CreateMatchRequest request, @jakarta.ws.rs.core.Context jakarta.ws.rs.core.UriInfo uriInfo) {
         Match match = matchService.createMatch(request);
         var location = UriBuilder.fromResource(MatchResource.class)
@@ -70,6 +70,7 @@ public class MatchResource {
 
     @POST
     @Path("/{id}/gol")
+    @Consumes(MediaType.APPLICATION_JSON)
     public MatchResponse registerScore(@PathParam("id") UUID id, @Valid ScoreEventRequest request) {
         Match match = matchService.registerScore(id, request);
         return MatchMapper.toResponse(match);

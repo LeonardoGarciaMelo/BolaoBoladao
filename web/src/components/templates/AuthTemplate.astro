@@ -1,0 +1,21 @@
+---
+import AuthForm from "../organisms/AuthForm.astro";
+import AuthHero from "../organisms/AuthHero.astro";
+import MatchTeaserRail from "../organisms/MatchTeaserRail.astro";
+import SiteHeader from "../organisms/SiteHeader.astro";
+
+interface Props {
+  mode: "login" | "register";
+}
+
+const { mode } = Astro.props;
+---
+
+<main class="auth-page" data-mode={mode}>
+  <SiteHeader action={mode === "login" ? "register" : "login"} />
+  <AuthHero />
+  <section class="auth-page__main">
+    <AuthForm mode={mode} />
+  </section>
+  <MatchTeaserRail />
+</main>

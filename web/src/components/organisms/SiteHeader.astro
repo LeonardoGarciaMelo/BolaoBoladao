@@ -1,0 +1,18 @@
+---
+import Button from "../atoms/Button.astro";
+import BrandLogo from "../molecules/BrandLogo.astro";
+
+interface Props {
+  action: "login" | "register" | "none";
+}
+
+const { action } = Astro.props;
+const actionProps = action === "login"
+  ? { href: "/login", label: "ENTRAR" }
+  : { href: "/registro", label: "CRIAR CONTA" };
+---
+
+<header class="site-header">
+  <BrandLogo href="/" label="Bolão Boladão, página inicial" />
+  {action !== "none" && <Button href={actionProps.href} variant="outline">{actionProps.label}</Button>}
+</header>

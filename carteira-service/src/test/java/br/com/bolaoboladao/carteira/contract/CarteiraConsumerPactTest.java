@@ -1,12 +1,12 @@
 package br.com.bolaoboladao.carteira.contract;
 
-import au.com.dius.pact.consumer.MessagePactBuilder;
+import au.com.dius.pact.consumer.dsl.PactBuilder;
 import au.com.dius.pact.consumer.junit5.PactConsumerTestExt;
 import au.com.dius.pact.consumer.junit5.PactTestFor;
 import au.com.dius.pact.consumer.junit5.ProviderType;
 import au.com.dius.pact.core.model.annotations.Pact;
-import au.com.dius.pact.core.model.messaging.Message;
-import au.com.dius.pact.core.model.messaging.MessagePact;
+import au.com.dius.pact.core.model.V4Interaction;
+import au.com.dius.pact.core.model.V4Pact;
 import br.com.bolaoboladao.carteira.presentation.messaging.dto.BetEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -24,18 +24,20 @@ public class CarteiraConsumerPactTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Pact(consumer = "carteira-service")
-    public MessagePact createBetCreatedPact(MessagePactBuilder builder) {
-        return builder
+    public V4Pact createBetCreatedPact(PactBuilder builder) {
+        return builder.usingLegacyMessageDsl()
                 .expectsToReceive("a BET_CREATED event")
                 .withMetadata(java.util.Map.of("contentType", "application/json"))
                 .withContent("{\"eventId\": \"123e4567-e89b-12d3-a456-426614174000\", \"eventType\": \"BET_CREATED\", \"betId\": \"123e4567-e89b-12d3-a456-426614174001\", \"userId\": \"123e4567-e89b-12d3-a456-426614174002\", \"amount\": 50.00}")
-                .toPact();
+                .toPact()
+                .asV4Pact()
+                .get();
     }
 
     @Test
     @PactTestFor(pactMethod = "createBetCreatedPact")
-    public void testBetCreatedEvent(List<Message> messages) throws Exception {
-        Message message = messages.get(0);
+    public void testBetCreatedEvent(List<V4Interaction.AsynchronousMessage> messages) throws Exception {
+        V4Interaction.AsynchronousMessage message = messages.get(0);
         assertNotNull(message);
 
         String json = message.contentsAsString();
