@@ -44,6 +44,7 @@ public class ProcessBetPaymentUseCase {
 
         recordLedgerEntry(wallet.id(), Ledger.Reason.BET, Ledger.Operation.DEBIT, amount);
         walletCache.invalidateBalance(userId);
+        walletCache.invalidateStatement(wallet.id());
         paymentEventPublisher.publishPaymentAccepted(betId);
     }
 
@@ -52,6 +53,7 @@ public class ProcessBetPaymentUseCase {
         Wallet wallet = findAndLockWalletOrThrow(userId);
         recordLedgerEntry(wallet.id(), Ledger.Reason.WIN, Ledger.Operation.CREDIT, amount);
         walletCache.invalidateBalance(userId);
+        walletCache.invalidateStatement(wallet.id());
     }
 
     private Wallet findAndLockWalletOrThrow(UUID userId) {
