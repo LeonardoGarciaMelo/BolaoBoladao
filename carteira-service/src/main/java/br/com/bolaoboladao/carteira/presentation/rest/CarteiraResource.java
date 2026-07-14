@@ -16,6 +16,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.Context;
 import io.smallrye.mutiny.Uni;
 import java.util.UUID;
 import org.eclipse.microprofile.faulttolerance.Timeout;
@@ -24,22 +26,24 @@ import org.eclipse.microprofile.faulttolerance.Timeout;
 @Produces(MediaType.APPLICATION_JSON)
 public class CarteiraResource {
 
-    @Inject
-    GetWalletBalanceUseCase getWalletBalanceUseCase;
+    private final GetWalletBalanceUseCase getWalletBalanceUseCase;
+    private final GetWalletStatementUseCase getWalletStatementUseCase;
 
     @Inject
-    GetWalletStatementUseCase getWalletStatementUseCase;
-
-    @Inject
-    WalletRepository walletRepository;
+    public CarteiraResource(GetWalletBalanceUseCase getWalletBalanceUseCase,
+                            GetWalletStatementUseCase getWalletStatementUseCase) {
+        this.getWalletBalanceUseCase = getWalletBalanceUseCase;
+        this.getWalletStatementUseCase = getWalletStatementUseCase;
+    }
 
     @GET
     @Path("/{userId}/balance")
     @Timeout(3000)
     public Uni<Response> getBalance(
             @PathParam("userId") UUID userId,
-            @HeaderParam("X-Authenticated-User-Id") String authenticatedUserIdHeader) {
-        UUID authenticatedUserId = authenticatedUserId(authenticatedUserIdHeader);
+            @Context ContainerRequestContext requestContext) {
+        
+        UUID authenticatedUserId = (UUID) requestContext.getProperty("authenticatedUserId");
         if (!userId.equals(authenticatedUserId)) {
             throw new ForbiddenException();
         }
@@ -54,27 +58,16 @@ public class CarteiraResource {
             @PathParam("walletId") UUID walletId,
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("10") int size,
-            @HeaderParam("X-Authenticated-User-Id") String authenticatedUserIdHeader) {
+            @Context ContainerRequestContext requestContext) {
 
-        UUID authenticatedUserId = authenticatedUserId(authenticatedUserIdHeader);
-        return walletRepository.findByUserId(authenticatedUserId)
-                .flatMap(wallet -> {
-                    boolean ownsWallet = wallet != null && wallet.id().equals(walletId);
-                    if (!ownsWallet) {
-                        return Uni.createFrom().failure(new ForbiddenException());
-                    }
-
-                    return getWalletStatementUseCase.execute(walletId, page, size)
-                            .map(statement -> statement.stream().map(LedgerEntryResponse::from).toList())
-                            .map(statementResponses -> Response.ok(statementResponses).build());
-                });
-    }
-
-    private UUID authenticatedUserId(String header) {
-        try {
-            return UUID.fromString(header);
-        } catch (IllegalArgumentException | NullPointerException exception) {
+        UUID authenticatedUserId = (UUID) requestContext.getProperty("authenticatedUserId");
+        if (authenticatedUserId == null) {
             throw new ForbiddenException();
         }
+        
+        return getWalletStatementUseCase.execute(authenticatedUserId, walletId, page, size)
+                .map(statement -> statement.stream().map(LedgerEntryResponse::from).toList())
+                .map(statementResponses -> Response.ok(statementResponses).build());
     }
+
 }

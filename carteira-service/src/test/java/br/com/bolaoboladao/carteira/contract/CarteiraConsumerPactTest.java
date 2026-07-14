@@ -37,7 +37,7 @@ public class CarteiraConsumerPactTest {
     @Test
     @PactTestFor(pactMethod = "createBetCreatedPact")
     public void testBetCreatedEvent(List<V4Interaction.AsynchronousMessage> messages) throws Exception {
-        V4Interaction.AsynchronousMessage message = messages.get(0);
+        V4Interaction.AsynchronousMessage message = messages.getFirst();
         assertNotNull(message);
 
         String json = message.contentsAsString();
