@@ -16,6 +16,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import io.smallrye.mutiny.Uni;
 import java.util.UUID;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 
@@ -35,39 +36,38 @@ public class CarteiraResource {
     @GET
     @Path("/{userId}/balance")
     @Timeout(3000)
-    public Response getBalance(
+    public Uni<Response> getBalance(
             @PathParam("userId") UUID userId,
             @HeaderParam("X-Authenticated-User-Id") String authenticatedUserIdHeader) {
         UUID authenticatedUserId = authenticatedUserId(authenticatedUserIdHeader);
         if (!userId.equals(authenticatedUserId)) {
             throw new ForbiddenException();
         }
-        var balance = getWalletBalanceUseCase.execute(userId);
-        return Response.ok(new BalanceResponse(balance)).build();
+        return getWalletBalanceUseCase.execute(userId)
+                .map(balance -> Response.ok(new BalanceResponse(balance)).build());
     }
 
     @GET
     @Path("/{walletId}/statement")
     @Timeout(3000)
-    public Response getStatement(
+    public Uni<Response> getStatement(
             @PathParam("walletId") UUID walletId,
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("10") int size,
             @HeaderParam("X-Authenticated-User-Id") String authenticatedUserIdHeader) {
 
         UUID authenticatedUserId = authenticatedUserId(authenticatedUserIdHeader);
-        boolean ownsWallet = walletRepository.findByUserId(authenticatedUserId)
-                .map(wallet -> wallet.id().equals(walletId))
-                .orElse(false);
-        if (!ownsWallet) {
-            throw new ForbiddenException();
-        }
+        return walletRepository.findByUserId(authenticatedUserId)
+                .flatMap(wallet -> {
+                    boolean ownsWallet = wallet != null && wallet.id().equals(walletId);
+                    if (!ownsWallet) {
+                        return Uni.createFrom().failure(new ForbiddenException());
+                    }
 
-        var statement = getWalletStatementUseCase.execute(walletId, page, size)
-                .stream()
-                .map(LedgerEntryResponse::from)
-                .toList();
-        return Response.ok(statement).build();
+                    return getWalletStatementUseCase.execute(walletId, page, size)
+                            .map(statement -> statement.stream().map(LedgerEntryResponse::from).toList())
+                            .map(statementResponses -> Response.ok(statementResponses).build());
+                });
     }
 
     private UUID authenticatedUserId(String header) {

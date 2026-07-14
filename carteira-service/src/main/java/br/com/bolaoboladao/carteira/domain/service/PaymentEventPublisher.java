@@ -1,8 +1,9 @@
 package br.com.bolaoboladao.carteira.domain.service;
 
+import io.smallrye.mutiny.Uni;
 import java.util.UUID;
 
 public interface PaymentEventPublisher {
-    void publishPaymentAccepted(UUID betId);
-    void publishPaymentRefused(UUID betId);
+    Uni<Void> publishPaymentAccepted(UUID betId);
+    Uni<Void> publishPaymentRefused(UUID betId);
 }

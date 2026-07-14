@@ -5,7 +5,9 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.repository.Panach
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
 import java.util.List;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
@@ -24,27 +26,30 @@ public class OutboxRetryJob {
     Emitter<String> walletEventEmitter;
 
     @Scheduled(every = "10s")
-    @Transactional
-    public void retryOutboxEvents() {
-        List<OutboxEventEntity> pendingEvents = outboxRepository.findAll().list();
-        if (pendingEvents.isEmpty()) {
-            return;
-        }
+    @WithTransaction
+    public Uni<Void> retryOutboxEvents() {
+        return outboxRepository.findAll().list()
+                .flatMap(pendingEvents -> {
+                    if (pendingEvents.isEmpty()) {
+                        return Uni.createFrom().voidItem();
+                    }
 
-        LOG.infof("Encontrados %d eventos no outbox para reprocessamento", pendingEvents.size());
+                    LOG.infof("Encontrados %d eventos no outbox para reprocessamento", pendingEvents.size());
 
-        for (OutboxEventEntity event : pendingEvents) {
-            try {
-                // Tenta reenviar o payload diretamente para o tópico
-                walletEventEmitter.send(event.getPayload());
-                // Se não lançou exceção (circuit breaker não abriu), removemos do outbox
-                outboxRepository.delete(event);
-                LOG.infof("Evento %s reprocessado e removido do outbox", event.getId());
-            } catch (Exception e) {
-                LOG.errorf("Falha ao reenviar evento do outbox %s: %s", event.getId(), e.getMessage());
-                // Interrompe o loop para não bombardear o Kafka se ele ainda estiver fora
-                break;
-            }
-        }
+                    return Multi.createFrom().iterable(pendingEvents)
+                            .onItem().transformToUniAndConcatenate(event ->
+                                    Uni.createFrom().completionStage(() -> walletEventEmitter.send(event.getPayload()))
+                                            .flatMap(ignore -> {
+                                                LOG.infof("Evento %s reprocessado e removido do outbox", event.getId());
+                                                return outboxRepository.delete(event).replaceWithVoid();
+                                            })
+                                            .onFailure().recoverWithUni(e -> {
+                                                LOG.errorf("Falha ao reenviar evento do outbox %s: %s", event.getId(), e.getMessage());
+                                                return Uni.createFrom().voidItem();
+                                            })
+                            )
+                            .collect().asList()
+                            .replaceWithVoid();
+                });
     }
 }

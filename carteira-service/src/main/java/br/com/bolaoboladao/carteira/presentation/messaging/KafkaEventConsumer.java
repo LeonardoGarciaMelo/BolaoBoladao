@@ -10,7 +10,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.mutiny.Uni;
 import java.util.UUID;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -35,40 +36,48 @@ public class KafkaEventConsumer {
     ObjectMapper objectMapper;
 
     @Incoming("user-events")
-    @Transactional
+    @WithTransaction
     @Retry(maxRetries = 3, delay = 2000, abortOn = InvalidEventException.class)
     @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
-    public void consumeUserEvent(String message) {
+    public Uni<Void> consumeUserEvent(String message) {
         var event = parseEvent(message, UserEvent.class);
 
-        if (alreadyProcessed(event.eventId())) return;
+        return alreadyProcessed(event.eventId())
+                .flatMap(processed -> {
+                    if (processed) return Uni.createFrom().voidItem();
 
-        switch (event.eventType()) {
-            case "USER_CREATED" -> createWalletUseCase.execute(event.userId());
-            default -> LOG.warnf("Unknown user event type: %s", event.eventType());
-        }
+                    Uni<Void> executionUni = Uni.createFrom().voidItem();
+                    switch (event.eventType()) {
+                        case "USER_CREATED" -> executionUni = createWalletUseCase.execute(event.userId());
+                        default -> LOG.warnf("Unknown user event type: %s", event.eventType());
+                    }
 
-        markProcessed(event.eventId(), event.eventType());
+                    return executionUni.flatMap(ignore -> markProcessed(event.eventId(), event.eventType()));
+                });
     }
 
     @Incoming("bet-events")
-    @Transactional
+    @WithTransaction
     @Retry(maxRetries = 3, delay = 2000, abortOn = InvalidEventException.class)
     @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
-    public void consumeBetEvent(String message) {
+    public Uni<Void> consumeBetEvent(String message) {
         var event = parseEvent(message, BetEvent.class);
 
-        if (alreadyProcessed(event.eventId())) return;
+        return alreadyProcessed(event.eventId())
+                .flatMap(processed -> {
+                    if (processed) return Uni.createFrom().voidItem();
 
-        switch (event.eventType()) {
-            case "BET_CREATED" -> processBetPaymentUseCase.executeBetCreated(
-                    event.betId(), event.userId(), event.amount());
-            case "BET_SETTLED" -> processBetPaymentUseCase.executeBetSettled(
-                    event.betId(), event.userId(), event.amount());
-            default -> LOG.warnf("Unknown bet event type: %s", event.eventType());
-        }
+                    Uni<Void> executionUni = Uni.createFrom().voidItem();
+                    switch (event.eventType()) {
+                        case "BET_CREATED" -> executionUni = processBetPaymentUseCase.executeBetCreated(
+                                event.betId(), event.userId(), event.amount());
+                        case "BET_SETTLED" -> executionUni = processBetPaymentUseCase.executeBetSettled(
+                                event.betId(), event.userId(), event.amount());
+                        default -> LOG.warnf("Unknown bet event type: %s", event.eventType());
+                    }
 
-        markProcessed(event.eventId(), event.eventType());
+                    return executionUni.flatMap(ignore -> markProcessed(event.eventId(), event.eventType()));
+                });
     }
 
 
@@ -80,17 +89,21 @@ public class KafkaEventConsumer {
         }
     }
 
-    private boolean alreadyProcessed(UUID eventId) {
-        if (eventId != null && processedEventRepository.isProcessed(eventId)) {
-            LOG.infof("Event already processed: %s", eventId);
-            return true;
+    private Uni<Boolean> alreadyProcessed(UUID eventId) {
+        if (eventId != null) {
+            return processedEventRepository.isProcessed(eventId)
+                    .map(processed -> {
+                        if (processed) LOG.infof("Event already processed: %s", eventId);
+                        return processed;
+                    });
         }
-        return false;
+        return Uni.createFrom().item(false);
     }
 
-    private void markProcessed(UUID eventId, String eventType) {
+    private Uni<Void> markProcessed(UUID eventId, String eventType) {
         if (eventId != null) {
-            processedEventRepository.markAsProcessed(eventId, eventType);
+            return processedEventRepository.markAsProcessed(eventId, eventType);
         }
+        return Uni.createFrom().voidItem();
     }
 }

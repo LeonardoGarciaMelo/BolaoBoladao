@@ -4,7 +4,8 @@ import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.mutiny.Uni;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -13,11 +14,14 @@ public class CreateWalletUseCase {
     @Inject
     WalletRepository walletRepository;
 
-    @Transactional
-    public void execute(UUID userId) {
-        if (walletRepository.findByUserId(userId).isPresent()) {
-            return;
-        }
-        walletRepository.save(new Wallet(UUID.randomUUID(), userId));
+    @WithTransaction
+    public Uni<Void> execute(UUID userId) {
+        return walletRepository.findByUserId(userId)
+                .flatMap(wallet -> {
+                    if (wallet != null) {
+                        return Uni.createFrom().voidItem();
+                    }
+                    return walletRepository.save(new Wallet(UUID.randomUUID(), userId));
+                });
     }
 }

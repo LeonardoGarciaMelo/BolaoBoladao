@@ -6,7 +6,9 @@ import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
 import java.time.LocalDate;
 import org.jboss.logging.Logger;
 
@@ -22,20 +24,24 @@ public class DailyBalanceJob {
     WalletRepository walletRepository;
 
     @Scheduled(cron = "0 0 0 * * ?")
-    @Transactional
-    public void consolidateBalances() {
+    @WithTransaction
+    public Uni<Void> consolidateBalances() {
         var yesterday = LocalDate.now().minusDays(1);
         LOG.infof("Starting daily balance consolidation for date: %s", yesterday);
 
-        var wallets = walletRepository.findAllWallets();
-        for (Wallet wallet : wallets) {
-            try {
-                consolidateDailyBalanceUseCase.execute(wallet.id(), yesterday);
-            } catch (Exception e) {
-                LOG.errorf(e, "Error consolidating balance for wallet %s", wallet.id());
-            }
-        }
-
-        LOG.infof("Daily balance consolidation finished. Processed %d wallets.", wallets.size());
+        return walletRepository.findAllWallets()
+                .flatMap(wallets -> {
+                    return Multi.createFrom().iterable(wallets)
+                            .onItem().transformToUniAndConcatenate(wallet ->
+                                    consolidateDailyBalanceUseCase.execute(wallet.id(), yesterday)
+                                            .onFailure().recoverWithUni(e -> {
+                                                LOG.errorf(e, "Error consolidating balance for wallet %s", wallet.id());
+                                                return Uni.createFrom().voidItem();
+                                            })
+                            )
+                            .collect().asList()
+                            .invoke(() -> LOG.infof("Daily balance consolidation finished. Processed %d wallets.", wallets.size()))
+                            .replaceWithVoid();
+                });
     }
 }
