@@ -4,6 +4,7 @@ import br.com.bolaoboladao.users.domain.User;
 import io.smallrye.jwt.algorithm.SignatureAlgorithm;
 import io.smallrye.jwt.build.Jwt;
 import io.smallrye.jwt.util.KeyUtils;
+import io.smallrye.jwt.util.ResourceUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -45,7 +46,9 @@ public class TokenService {
 
     private PrivateKey signingKey() {
         try {
-            return KeyUtils.readPrivateKey(privateKeyLocation, SignatureAlgorithm.RS256);
+            return KeyUtils.decodePrivateKey(
+                    ResourceUtils.readResource(privateKeyLocation),
+                    SignatureAlgorithm.RS256);
         } catch (Exception exception) {
             throw new IllegalStateException("Não foi possível carregar a chave privada JWT", exception);
         }

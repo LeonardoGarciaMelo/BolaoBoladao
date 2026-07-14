@@ -38,6 +38,11 @@ public class BackendClient {
                 .sendBuffer(Buffer.buffer(body)).toCompletionStage());
     }
 
+    public Uni<HttpResponse<Buffer>> publicGet(String url) {
+        return Uni.createFrom().completionStage(webClient.getAbs(url)
+                .send().toCompletionStage());
+    }
+
     private HttpRequest<Buffer> authenticatedGet(String url, String authenticatedUserId) {
         return webClient.getAbs(url)
                 .putHeader("Content-Type", "application/json")

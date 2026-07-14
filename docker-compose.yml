@@ -10,8 +10,8 @@ services:
       POSTGRES_DB: partidas_db
       POSTGRES_USER: bolao
       POSTGRES_PASSWORD: bolao
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     volumes:
       - partidas_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -79,10 +79,11 @@ services:
     environment:
       USER_SERVICE_URL: http://user-service:8082
       PARTIDAS_SERVICE_URL: http://partidas-service:8081
+      WEB_SERVICE_URL: http://web:80
       JWT_ISSUER: bolao-user-service
       JWT_AUDIENCE: bolao-api
       JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
-      WEB_ORIGIN: http://localhost:4321
+      WEB_ORIGIN: http://localhost:8080
     ports:
       - "8080:8080"
     volumes:
@@ -98,10 +99,10 @@ services:
       context: ./web
       dockerfile: Dockerfile
       args:
-        PUBLIC_API_BASE_URL: http://localhost:8080/api
+        PUBLIC_API_BASE_URL: /api
     container_name: bolao-web
-    ports:
-      - "4321:80"
+    expose:
+      - "80"
     depends_on:
       api-gateway:
         condition: service_started

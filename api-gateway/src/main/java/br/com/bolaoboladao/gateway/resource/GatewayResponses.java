@@ -13,7 +13,7 @@ final class GatewayResponses {
         String contentType = response.getHeader("Content-Type");
         return Response.status(response.statusCode())
                 .type(contentType == null ? MediaType.APPLICATION_JSON : contentType)
-                .entity(response.bodyAsString())
+                .entity(response.body().getBytes())
                 .build();
     }
 }

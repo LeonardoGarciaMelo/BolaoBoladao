@@ -38,10 +38,10 @@ próximos incrementos.
 
 | Serviço | Status | Stack | Porta |
 |---|---|---|---|
-| `partidas-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | 8081 |
-| `user-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | 8082 |
-| `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | 8080 |
-| `web` | ✅ implementado | Astro + Nginx | 4321 |
+| `partidas-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | interna (8081) |
+| `user-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Flyway | interna (8082) |
+| `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | pública (8080) |
+| `web` | ✅ implementado | Astro + Nginx | interna (80) |
 | `apostas-service` | ⏳ pendente | — | — |
 | `usuarios-service` | ⏳ pendente | — | — |
 | `carteira-service` | ⏳ pendente | — | — |
@@ -73,9 +73,9 @@ openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
 docker compose up --build
 ```
 
-A web estará em `http://localhost:4321` e a única API pública em
-`http://localhost:8080`. Os serviços de Partidas e Usuários não expõem portas
-no host quando executados pelo Compose.
+A web e a API estarão em `http://localhost:8080`: o gateway entrega a
+interface e encaminha as chamadas sob `/api`. Nenhum serviço ou banco expõe
+porta no host quando executados pelo Compose.
 
 O fluxo é cadastro (`POST /api/auth/register`) → login
 (`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
