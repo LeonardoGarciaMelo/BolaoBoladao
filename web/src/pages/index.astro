@@ -1,102 +1,12 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import Layout from "../layouts/Layout.astro";
 ---
 
-<Layout>
-	<main class="page-shell">
-		<section class="brand-panel" aria-labelledby="brand-title">
-			<p class="eyebrow">BOLÃO BOLADÃO</p>
-			<h1 id="brand-title">Seu palpite entra em campo.</h1>
-			<p class="brand-copy">Acompanhe as partidas e participe do bolão com uma única conta, de onde estiver.</p>
-			<div class="feature-list" aria-label="Benefícios">
-				<span>Partidas em tempo real</span><span>Palpites centralizados</span><span>Sessão protegida</span>
-			</div>
-		</section>
-
-		<section class="auth-card" id="auth-view" aria-labelledby="auth-title">
-			<div class="card-heading">
-				<p class="eyebrow" id="form-kicker">BEM-VINDO DE VOLTA</p>
-				<h2 id="auth-title">Entre na sua conta</h2>
-				<p id="form-description">Use seu usuário e senha para acompanhar as partidas.</p>
-			</div>
-			<form id="auth-form" novalidate>
-				<label class="field field-name" for="name"><span>Nome</span><input id="name" name="name" autocomplete="name" maxlength="120" /></label>
-				<label class="field" for="username"><span>Usuário</span><input id="username" name="username" autocomplete="username" minlength="3" required /></label>
-				<label class="field" for="password"><span>Senha</span><input id="password" name="password" type="password" autocomplete="current-password" minlength="12" required /></label>
-				<p class="form-message" id="form-message" role="alert" aria-live="polite"></p>
-				<button class="primary-button" type="submit" id="submit-button">Entrar</button>
-			</form>
-			<button class="text-button" id="mode-toggle" type="button">Ainda não tem conta? Cadastre-se</button>
-		</section>
-
-		<section class="matches-card" id="matches-view" hidden aria-labelledby="matches-title">
-			<header class="matches-header"><div><p class="eyebrow">ÁREA DO BOLÃO</p><h2 id="matches-title">Partidas</h2></div><button class="text-button" id="logout-button" type="button">Sair</button></header>
-			<p class="form-message" id="matches-message" role="status" aria-live="polite"></p>
-			<div class="matches-list" id="matches-list" aria-live="polite"></div>
-		</section>
-	</main>
+<Layout title="Bolão Boladão">
+  <main class="route-loading" aria-live="polite"><span></span>Preparando seu jogo…</main>
 </Layout>
 
 <script>
-	const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL || 'http://localhost:8080/api';
-	const tokenKey = 'bolao.access-token';
-	const authView = document.querySelector('#auth-view') as HTMLElement;
-	const matchesView = document.querySelector('#matches-view') as HTMLElement;
-	const authForm = document.querySelector('#auth-form') as HTMLFormElement;
-	const nameField = document.querySelector('#name') as HTMLInputElement;
-	const usernameField = document.querySelector('#username') as HTMLInputElement;
-	const passwordField = document.querySelector('#password') as HTMLInputElement;
-	const nameWrapper = document.querySelector('.field-name') as HTMLElement;
-	const modeToggle = document.querySelector('#mode-toggle') as HTMLButtonElement;
-	const submitButton = document.querySelector('#submit-button') as HTMLButtonElement;
-	const formKicker = document.querySelector('#form-kicker') as HTMLElement;
-	const authTitle = document.querySelector('#auth-title') as HTMLElement;
-	const formDescription = document.querySelector('#form-description') as HTMLElement;
-	const formMessage = document.querySelector('#form-message') as HTMLElement;
-	const matchesMessage = document.querySelector('#matches-message') as HTMLElement;
-	const matchesList = document.querySelector('#matches-list') as HTMLElement;
-	const logoutButton = document.querySelector('#logout-button') as HTMLButtonElement;
-	let registering = false;
-
-	function message(element: HTMLElement, text = '', error = false) { element.textContent = text; element.dataset.error = String(error); }
-	function setMode(next: boolean) {
-		registering = next; nameWrapper.hidden = !next; nameField.required = next;
-		passwordField.autocomplete = next ? 'new-password' : 'current-password';
-		formKicker.textContent = next ? 'COMECE AGORA' : 'BEM-VINDO DE VOLTA';
-		authTitle.textContent = next ? 'Crie sua conta' : 'Entre na sua conta';
-		formDescription.textContent = next ? 'Informe seus dados para participar do bolão.' : 'Use seu usuário e senha para acompanhar as partidas.';
-		submitButton.textContent = next ? 'Criar conta' : 'Entrar';
-		modeToggle.textContent = next ? 'Já tem conta? Entre agora' : 'Ainda não tem conta? Cadastre-se'; message(formMessage);
-	}
-	function showAuth() { authView.hidden = false; matchesView.hidden = true; message(matchesMessage); }
-	function renderMatch(match: Record<string, unknown>) {
-		const item = document.createElement('article'); item.className = 'match-item';
-		const teams = document.createElement('strong'); teams.textContent = `${match.teamHome ?? 'Time A'} × ${match.teamAway ?? 'Time B'}`;
-		const detail = document.createElement('span'); const score = match.teamHomeScore == null || match.teamAwayScore == null ? 'Placar ainda não definido' : `${match.teamHomeScore} × ${match.teamAwayScore}`;
-		detail.textContent = `${match.status ?? 'AGENDADA'} · ${score}`; item.append(teams, detail); return item;
-	}
-	async function loadMatches() {
-		const token = sessionStorage.getItem(tokenKey); if (!token) return showAuth();
-		authView.hidden = true; matchesView.hidden = false; matchesList.replaceChildren(); message(matchesMessage, 'Carregando partidas…');
-		try {
-			const response = await fetch(`${apiBaseUrl}/partidas`, { headers: { Authorization: `Bearer ${token}` } });
-			if (response.status === 401) { sessionStorage.removeItem(tokenKey); showAuth(); message(formMessage, 'Sua sessão expirou. Entre novamente.', true); return; }
-			if (!response.ok) throw new Error('Não foi possível carregar as partidas.');
-			const matches = await response.json() as Record<string, unknown>[]; message(matchesMessage, matches.length ? '' : 'Nenhuma partida cadastrada ainda.'); matches.forEach((match) => matchesList.append(renderMatch(match)));
-		} catch (error) { message(matchesMessage, error instanceof Error ? error.message : 'Erro inesperado.', true); }
-	}
-	authForm.addEventListener('submit', async (event) => {
-		event.preventDefault(); if (!authForm.reportValidity()) return; submitButton.disabled = true; message(formMessage);
-		const payload = registering ? { name: nameField.value.trim(), username: usernameField.value.trim(), password: passwordField.value } : { username: usernameField.value.trim(), password: passwordField.value };
-		try {
-			const response = await fetch(`${apiBaseUrl}/auth/${registering ? 'register' : 'login'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-			const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.message || 'Não foi possível concluir a solicitação.');
-			if (registering) { authForm.reset(); setMode(false); message(formMessage, 'Conta criada. Entre para continuar.'); }
-			else { sessionStorage.setItem(tokenKey, data.accessToken); passwordField.value = ''; await loadMatches(); }
-		} catch (error) { message(formMessage, error instanceof Error ? error.message : 'Erro inesperado.', true); }
-		finally { submitButton.disabled = false; }
-	});
-	modeToggle.addEventListener('click', () => setMode(!registering));
-	logoutButton.addEventListener('click', () => { sessionStorage.removeItem(tokenKey); authForm.reset(); showAuth(); });
-	setMode(false); void loadMatches();
+  const token = sessionStorage.getItem("bolao.access-token");
+  window.location.replace(token ? "/partidas" : "/login");
 </script>

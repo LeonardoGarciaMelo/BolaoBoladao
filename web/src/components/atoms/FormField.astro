@@ -1,0 +1,24 @@
+---
+import Icon from "./Icon.astro";
+
+interface Props {
+  id: string;
+  label: string;
+  type?: "text" | "password";
+  autocomplete?: string;
+  required?: boolean;
+  minLength?: number;
+  icon: "user" | "lock";
+  placeholder: string;
+}
+
+const { id, label, type = "text", autocomplete, required = false, minLength, icon, placeholder } = Astro.props;
+---
+
+<label class="field" for={id}>
+  <span class="field__label">{label}</span>
+  <span class="field__control">
+    <Icon name={icon} size={18} />
+    <input id={id} name={id} type={type} autocomplete={autocomplete} required={required} minlength={minLength} placeholder={placeholder} />
+  </span>
+</label>

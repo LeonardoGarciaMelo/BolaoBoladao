@@ -1,0 +1,24 @@
+---
+import tigerHero from "../../assets/tiger-football-hero.png";
+import FeatureCallout from "../molecules/FeatureCallout.astro";
+
+const features = [
+  { icon: "trophy" as const, title: "PREDIGA", text: " o resultado" },
+  { icon: "target" as const, title: "ACERTE", text: " mais palpites" },
+  { icon: "chart" as const, title: "SUBA", text: " no ranking" },
+];
+---
+
+<aside class="auth-hero">
+  <div class="auth-hero__glow"></div>
+  <div class="auth-hero__copy">
+    <h1>Futebol é só o começo.</h1>
+    <p>Entre no bolão, acompanhe os jogos e mostre que entende de campo.</p>
+  </div>
+  <ul class="auth-hero__features">
+    {features.map((feature) => <FeatureCallout {...feature} />)}
+  </ul>
+  <div class="auth-hero__media">
+    <img class="auth-hero__mascot" src={tigerHero.src} width={tigerHero.width} height={tigerHero.height} alt="Mascote tigre do Bolão Boladão em campo" />
+  </div>
+</aside>

@@ -1,0 +1,62 @@
+---
+import Button from "../atoms/Button.astro";
+import Icon from "../atoms/Icon.astro";
+---
+
+<main class="matches-page">
+  <header class="matches-page__header">
+    <div><p>ÁREA DO BOLÃO</p><h1>Partidas</h1></div>
+    <Button variant="ghost" class="logout-button"><Icon name="logout" size={18} /> SAIR</Button>
+  </header>
+  <section class="matches-board" aria-live="polite">
+    <p class="matches-board__message">Carregando partidas…</p>
+    <div class="matches-list"></div>
+  </section>
+</main>
+
+<script>
+  import { apiBaseUrl, clearAccessToken, getAccessToken } from "../../scripts/session";
+
+  const message = document.querySelector<HTMLElement>(".matches-board__message");
+  const list = document.querySelector<HTMLElement>(".matches-list");
+  const logout = document.querySelector<HTMLButtonElement>(".logout-button");
+
+  const renderMatch = (match: Record<string, unknown>) => {
+    const item = document.createElement("article");
+    item.className = "match-item";
+    const status = document.createElement("span");
+    status.textContent = String(match.status ?? "AGENDADA");
+    const teams = document.createElement("strong");
+    teams.textContent = `${String(match.teamHome ?? "Time A")} × ${String(match.teamAway ?? "Time B")}`;
+    const score = document.createElement("small");
+    score.textContent = match.teamHomeScore == null || match.teamAwayScore == null
+      ? "Placar ainda não definido"
+      : `${String(match.teamHomeScore)} × ${String(match.teamAwayScore)}`;
+    item.append(status, teams, score);
+    return item;
+  };
+
+  const loadMatches = async () => {
+    const token = getAccessToken();
+    if (!token) return window.location.replace("/login");
+    try {
+      const response = await fetch(`${apiBaseUrl}/partidas`, { headers: { Authorization: `Bearer ${token}` } });
+      if (response.status === 401) {
+        clearAccessToken();
+        return window.location.replace("/login");
+      }
+      if (!response.ok) throw new Error("Não foi possível carregar as partidas.");
+      const matches = await response.json() as Record<string, unknown>[];
+      if (message) message.textContent = matches.length ? "Escolha uma partida e deixe seu palpite." : "Nenhuma partida cadastrada ainda. Volte em breve.";
+      matches.forEach((match) => list?.append(renderMatch(match)));
+    } catch (error) {
+      if (message) message.textContent = error instanceof Error ? error.message : "Erro inesperado.";
+    }
+  };
+
+  logout?.addEventListener("click", () => {
+    clearAccessToken();
+    window.location.assign("/login");
+  });
+  void loadMatches();
+</script>

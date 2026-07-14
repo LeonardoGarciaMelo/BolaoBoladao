@@ -1,0 +1,16 @@
+---
+import Icon from "../atoms/Icon.astro";
+
+interface Props {
+  icon: "trophy" | "target" | "chart";
+  title: string;
+  text: string;
+}
+
+const { icon, title, text } = Astro.props;
+---
+
+<li class="feature-callout">
+  <Icon name={icon} size={24} />
+  <span><strong>{title}</strong>{text}</span>
+</li>

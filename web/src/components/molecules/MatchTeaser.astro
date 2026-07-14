@@ -1,0 +1,35 @@
+---
+import TeamCrest from "../atoms/TeamCrest.astro";
+
+interface Team {
+  name: string;
+  monogram: string;
+  primary: string;
+  secondary: string;
+  variant: "shield" | "round" | "diamond";
+}
+
+interface Props {
+  status: string;
+  time: string;
+  home: Team;
+  away: Team;
+  prediction: [number, number];
+  stake: string;
+}
+
+const { status, time, home, away, prediction, stake } = Astro.props;
+---
+
+<article class="match-teaser">
+  <header><span class:match-teaser__live={status === "AO VIVO"}>{status}</span><time>{time}</time></header>
+  <div class="match-teaser__teams" aria-label={`${home.name} contra ${away.name}`}>
+    <span class="match-teaser__team"><TeamCrest {...home} /><small>{home.name}</small></span>
+    <b>×</b>
+    <span class="match-teaser__team"><TeamCrest {...away} /><small>{away.name}</small></span>
+  </div>
+  <div class="match-teaser__prediction">
+    <span class="match-teaser__score"><small>SEU PALPITE</small><strong>{prediction[0]} <b>×</b> {prediction[1]}</strong></span>
+    <span class="match-teaser__stake"><small>VALOR DO PALPITE</small><strong>{stake}</strong></span>
+  </div>
+</article>

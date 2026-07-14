@@ -1,0 +1,21 @@
+---
+interface Props {
+  name: string;
+  monogram: string;
+  primary: string;
+  secondary: string;
+  variant: "shield" | "round" | "diamond";
+}
+
+const { name, monogram, primary, secondary, variant } = Astro.props;
+---
+
+<span
+  class:list={["team-crest", `team-crest--${variant}`]}
+  style={`--crest-primary:${primary};--crest-secondary:${secondary}`}
+  aria-label={name}
+  title={name}
+>
+  <span class="team-crest__shine"></span>
+  <strong>{monogram}</strong>
+</span>

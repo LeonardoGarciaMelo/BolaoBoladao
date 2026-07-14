@@ -1,0 +1,26 @@
+---
+import MatchTeaser from "../molecules/MatchTeaser.astro";
+
+const matches = [
+  {
+    status: "AO VIVO", time: "21:30", prediction: [2, 1] as [number, number], stake: "R$ 10,00",
+    home: { name: "Aurora", monogram: "A", primary: "#3c8cff", secondary: "#d9f3ff", variant: "shield" as const },
+    away: { name: "Estrela", monogram: "E", primary: "#ff5d19", secondary: "#ffd0b9", variant: "diamond" as const },
+  },
+  {
+    status: "HOJE", time: "19:00", prediction: [1, 0] as [number, number], stake: "R$ 25,00",
+    home: { name: "Lime", monogram: "L", primary: "#c7ff37", secondary: "#efffc0", variant: "round" as const },
+    away: { name: "Oceano", monogram: "O", primary: "#32d7ff", secondary: "#baf4ff", variant: "shield" as const },
+  },
+  {
+    status: "AMANHÃ", time: "16:00", prediction: [3, 2] as [number, number], stake: "R$ 50,00",
+    home: { name: "Violeta", monogram: "V", primary: "#b770ff", secondary: "#ead7ff", variant: "diamond" as const },
+    away: { name: "Rubro", monogram: "R", primary: "#ff3a4d", secondary: "#ffcad0", variant: "round" as const },
+  },
+];
+---
+
+<section class="match-rail" aria-labelledby="match-rail-title">
+  <div class="match-rail__heading"><span></span><h2 id="match-rail-title">Partidas em destaque</h2><span></span></div>
+  <div class="match-rail__list">{matches.map((match) => <MatchTeaser {...match} />)}</div>
+</section>
