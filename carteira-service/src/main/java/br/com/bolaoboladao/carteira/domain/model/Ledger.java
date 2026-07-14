@@ -22,4 +22,8 @@ public record Ledger(
     public boolean isDebit() {
         return operation == Operation.DEBIT;
     }
+
+    public BigDecimal applyTo(BigDecimal balance) {
+        return isCredit() ? balance.add(amount) : balance.subtract(amount);
+    }
 }

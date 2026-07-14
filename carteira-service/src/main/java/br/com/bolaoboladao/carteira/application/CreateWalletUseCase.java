@@ -11,8 +11,12 @@ import java.util.UUID;
 @ApplicationScoped
 public class CreateWalletUseCase {
 
+    private final WalletRepository walletRepository;
+
     @Inject
-    WalletRepository walletRepository;
+    public CreateWalletUseCase(WalletRepository walletRepository) {
+        this.walletRepository = walletRepository;
+    }
 
     @WithTransaction
     public Uni<Void> execute(UUID userId) {

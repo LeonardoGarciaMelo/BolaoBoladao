@@ -36,11 +36,10 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
     PanacheOutboxEventRepository outboxRepository;
 
     @Override
-    @Override
     @WithTransaction
     @Fallback(fallbackMethod = "fallbackPublishPaymentAccepted")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> publishPaymentAccepted(UUID betId) {
         try {
             String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_ACCEPTED", betId));
@@ -64,7 +63,7 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
     @WithTransaction
     @Fallback(fallbackMethod = "fallbackPublishPaymentRefused")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> publishPaymentRefused(UUID betId) {
         try {
             String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_REFUSED", betId));

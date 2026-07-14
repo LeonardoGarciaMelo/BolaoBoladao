@@ -23,7 +23,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class RedisWalletCache implements WalletCache {
 
-    private static final Logger LOG = Logger.getLogger(RedisWalletCache.java);
+    private static final Logger LOG = Logger.getLogger(RedisWalletCache.class);
     private static final String TTL_SECONDS = "300";
 
     @Inject
@@ -35,7 +35,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackGetBalance")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Optional<BigDecimal>> getBalance(UUID userId) {
         return reactiveRedisClient.value(String.class).get(userId.toString())
                 .map(response -> response != null ? Optional.of(new BigDecimal(response)) : Optional.empty());
@@ -49,7 +49,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackSetBalance")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> setBalance(UUID userId, BigDecimal balance) {
         return reactiveRedisClient.value(String.class)
                 .setex(userId.toString(), Long.parseLong(TTL_SECONDS), balance.toString())
@@ -64,7 +64,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackInvalidateBalance")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> invalidateBalance(UUID userId) {
         return reactiveRedisClient.key().del(userId.toString()).replaceWithVoid();
     }
@@ -77,7 +77,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackGetStatement")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Optional<List<Ledger>>> getStatement(UUID walletId, int page, int size) {
         return reactiveRedisClient.hash(String.class).hget(statementKey(walletId), page + ":" + size)
                 .map(response -> {
@@ -101,7 +101,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackSetStatement")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> setStatement(UUID walletId, int page, int size, List<Ledger> statement) {
         try {
             String json = objectMapper.writeValueAsString(statement);
@@ -123,7 +123,7 @@ public class RedisWalletCache implements WalletCache {
     @Override
     @Fallback(fallbackMethod = "fallbackInvalidateStatement")
     @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, failureRatio = 0.5, delay = 5000)
+    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> invalidateStatement(UUID walletId) {
         return reactiveRedisClient.key().del(statementKey(walletId)).replaceWithVoid();
     }

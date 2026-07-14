@@ -35,9 +35,14 @@ public class PanacheWalletRepository implements WalletRepository, PanacheReposit
     }
 
     @Override
-    public Uni<List<Wallet>> findAllWallets() {
-        return listAll()
+    public Uni<List<Wallet>> findWalletsPaged(int page, int size) {
+        return findAll().page(page, size).list()
                 .onItem().transform(list -> list.stream().map(this::toDomain).toList());
+    }
+
+    @Override
+    public Uni<Long> countWallets() {
+        return count();
     }
 
     private Wallet toDomain(WalletEntity entity) {
