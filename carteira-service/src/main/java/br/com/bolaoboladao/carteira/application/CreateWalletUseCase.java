@@ -2,10 +2,11 @@ package br.com.bolaoboladao.carteira.application;
 
 import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
 import java.util.UUID;
 
 @ApplicationScoped

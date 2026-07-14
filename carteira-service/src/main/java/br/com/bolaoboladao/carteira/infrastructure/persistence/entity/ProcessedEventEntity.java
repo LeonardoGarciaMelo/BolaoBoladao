@@ -3,9 +3,10 @@ package br.com.bolaoboladao.carteira.infrastructure.persistence.entity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Data;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
-import lombok.Data;
 
 @Entity
 @Table(name = "processed_event")

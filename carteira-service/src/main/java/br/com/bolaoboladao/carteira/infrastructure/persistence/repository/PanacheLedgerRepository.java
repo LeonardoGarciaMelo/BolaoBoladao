@@ -3,12 +3,12 @@ package br.com.bolaoboladao.carteira.infrastructure.persistence.repository;
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
 import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.LedgerEntity;
-import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.LedgerEntity;
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Page;
-import io.smallrye.mutiny.Uni;
 import io.quarkus.panache.common.Sort;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -37,7 +37,7 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
 
     @Override
     public Uni<List<Ledger>> findByWalletIdAndDateBetween(UUID walletId, LocalDate startDate, LocalDate endDate) {
-        return find("walletId = ?1 and CAST(occurredAt AS date) >= ?2 and CAST(occurredAt AS date) <= ?3 order by occurredAt asc", 
+        return find("walletId = ?1 and CAST(occurredAt AS date) >= ?2 and CAST(occurredAt AS date) <= ?3 order by occurredAt asc",
                 walletId, startDate, endDate)
                 .list()
                 .onItem().transform(list -> list.stream().map(this::toDomain).toList());

@@ -4,10 +4,11 @@ import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import br.com.bolaoboladao.carteira.domain.service.WalletCache;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ForbiddenException;
-import io.smallrye.mutiny.Uni;
+
 import java.util.List;
 import java.util.UUID;
 

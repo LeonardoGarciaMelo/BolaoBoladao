@@ -6,10 +6,11 @@ import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import br.com.bolaoboladao.carteira.domain.service.PaymentEventPublisher;
 import br.com.bolaoboladao.carteira.domain.service.WalletCache;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;

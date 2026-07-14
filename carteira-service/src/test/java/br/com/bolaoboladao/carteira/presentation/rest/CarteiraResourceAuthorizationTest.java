@@ -24,9 +24,9 @@ class CarteiraResourceAuthorizationTest {
     void setUp() {
         GetWalletBalanceUseCase getWalletBalanceUseCase = Mockito.mock(GetWalletBalanceUseCase.class);
         GetWalletStatementUseCase getWalletStatementUseCase = Mockito.mock(GetWalletStatementUseCase.class);
-        
+
         resource = new CarteiraResource(getWalletBalanceUseCase, getWalletStatementUseCase);
-        
+
         requestContext = Mockito.mock(ContainerRequestContext.class);
         when(requestContext.getProperty("authenticatedUserId")).thenReturn(AUTHENTICATED_USER_ID);
     }
@@ -43,7 +43,7 @@ class CarteiraResourceAuthorizationTest {
     void deveRecusarIdentidadeAusenteOuInvalida() {
         ContainerRequestContext invalidContext = Mockito.mock(ContainerRequestContext.class);
         when(invalidContext.getProperty("authenticatedUserId")).thenReturn(null);
-        
+
         assertThrows(ForbiddenException.class, () -> resource.getBalance(AUTHENTICATED_USER_ID, invalidContext));
         assertThrows(ForbiddenException.class, () -> resource.getStatement(WALLET_ID, 0, 10, invalidContext));
     }

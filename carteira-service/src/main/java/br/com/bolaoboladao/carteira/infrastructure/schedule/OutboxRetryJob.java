@@ -1,14 +1,12 @@
 package br.com.bolaoboladao.carteira.infrastructure.schedule;
 
-import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.OutboxEventEntity;
 import br.com.bolaoboladao.carteira.infrastructure.persistence.repository.PanacheOutboxEventRepository;
-import io.quarkus.scheduler.Scheduled;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.quarkus.scheduler.Scheduled;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
-import java.util.List;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;

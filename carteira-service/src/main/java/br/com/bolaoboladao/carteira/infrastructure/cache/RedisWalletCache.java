@@ -15,7 +15,6 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -83,7 +82,8 @@ public class RedisWalletCache implements WalletCache {
                 .map(response -> {
                     if (response != null) {
                         try {
-                            List<Ledger> statement = objectMapper.readValue(response, new TypeReference<>() {});
+                            List<Ledger> statement = objectMapper.readValue(response, new TypeReference<>() {
+                            });
                             return Optional.of(statement);
                         } catch (JsonProcessingException e) {
                             LOG.warnf("Erro ao desserializar extrato: %s", e.getMessage());

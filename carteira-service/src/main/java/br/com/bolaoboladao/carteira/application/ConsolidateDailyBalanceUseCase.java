@@ -4,13 +4,13 @@ import br.com.bolaoboladao.carteira.domain.model.DailyBalance;
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.repository.DailyBalanceRepository;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped

@@ -12,9 +12,6 @@ public record Ledger(
         BigDecimal amount,
         LocalDateTime occurredAt
 ) {
-    public enum Reason { WIN, DEPOSIT, BET, WITHDRAW }
-    public enum Operation { CREDIT, DEBIT }
-
     public boolean isCredit() {
         return operation == Operation.CREDIT;
     }
@@ -26,4 +23,8 @@ public record Ledger(
     public BigDecimal applyTo(BigDecimal balance) {
         return isCredit() ? balance.add(amount) : balance.subtract(amount);
     }
+
+    public enum Reason {WIN, DEPOSIT, BET, WITHDRAW}
+
+    public enum Operation {CREDIT, DEBIT}
 }

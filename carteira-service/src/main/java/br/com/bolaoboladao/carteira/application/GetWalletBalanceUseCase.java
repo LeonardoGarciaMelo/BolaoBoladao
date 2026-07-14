@@ -1,6 +1,5 @@
 package br.com.bolaoboladao.carteira.application;
 
-import br.com.bolaoboladao.carteira.domain.model.DailyBalance;
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.DailyBalanceRepository;
@@ -10,9 +9,9 @@ import br.com.bolaoboladao.carteira.domain.service.WalletCache;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped

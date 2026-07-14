@@ -1,12 +1,13 @@
 package br.com.bolaoboladao.carteira.application;
 
 import br.com.bolaoboladao.carteira.application.repository.ProcessedEventRepository;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import io.smallrye.mutiny.Uni;
+import org.jboss.logging.Logger;
+
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class IdempotentEventUseCase {

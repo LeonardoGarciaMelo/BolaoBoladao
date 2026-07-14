@@ -5,6 +5,7 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.ProcessedE
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;

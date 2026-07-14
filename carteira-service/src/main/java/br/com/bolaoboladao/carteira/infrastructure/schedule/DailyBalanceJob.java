@@ -1,29 +1,25 @@
 package br.com.bolaoboladao.carteira.infrastructure.schedule;
 
 import br.com.bolaoboladao.carteira.application.ConsolidateDailyBalanceUseCase;
-import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import io.quarkus.scheduler.Scheduled;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
-import java.time.LocalDate;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
+
+import java.time.LocalDate;
 
 @ApplicationScoped
 public class DailyBalanceJob {
 
     private static final Logger LOG = Logger.getLogger(DailyBalanceJob.class);
-
+    private static final int PAGE_SIZE = 100;
     @Inject
     ConsolidateDailyBalanceUseCase consolidateDailyBalanceUseCase;
-
     @Inject
     WalletRepository walletRepository;
-
-    private static final int PAGE_SIZE = 100;
 
     @Scheduled(cron = "0 0 0 * * ?")
     public Uni<Void> consolidateBalances() {
@@ -41,11 +37,11 @@ public class DailyBalanceJob {
         }
 
         int totalPages = (int) Math.ceil((double) totalWallets / PAGE_SIZE);
-        
+
         // Crio uma sequência de páginas 0, 1, 2...
         return Multi.createFrom().range(0, totalPages)
-                .onItem().transformToUniAndConcatenate(page -> 
-                    processPage(date, page)
+                .onItem().transformToUniAndConcatenate(page ->
+                        processPage(date, page)
                 )
                 .collect().last() // Consumo a stream até o final
                 .replaceWithVoid();

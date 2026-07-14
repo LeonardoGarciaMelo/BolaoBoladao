@@ -6,6 +6,7 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.DailyBalan
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+
 import java.time.LocalDate;
 import java.util.UUID;
 

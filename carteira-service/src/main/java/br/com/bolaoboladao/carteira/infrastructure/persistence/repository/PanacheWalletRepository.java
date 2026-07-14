@@ -6,10 +6,10 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.WalletEnti
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 import jakarta.persistence.LockModeType;
+
+import java.util.List;
+import java.util.UUID;
 
 @ApplicationScoped
 public class PanacheWalletRepository implements WalletRepository, PanacheRepositoryBase<WalletEntity, UUID> {
