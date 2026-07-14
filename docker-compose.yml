@@ -128,6 +128,40 @@ services:
       kafka:
         condition: service_healthy
 
+  apostas-db:
+    image: postgres:16-alpine
+    container_name: bolao-apostas-db
+    environment:
+      POSTGRES_DB: apostas_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    ports:
+      - "5435:5432"
+    volumes:
+      - apostas_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d apostas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  apostas-service:
+    build:
+      context: ./apostas-service
+      dockerfile: Dockerfile
+    container_name: bolao-apostas-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://bolao:bolao@apostas-db:5432/apostas_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BET_TOPIC: bet-events
+    expose:
+      - "8000"
+    depends_on:
+      apostas-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
   user-db:
     image: postgres:16-alpine
     container_name: bolao-user-db
@@ -175,6 +209,7 @@ services:
       USER_SERVICE_URL: http://user-service:8082
       PARTIDAS_SERVICE_URL: http://partidas-service:8081
       CARTEIRA_SERVICE_URL: http://carteira-service:8080
+      BETS_SERVICE_URL: http://apostas-service:8000
       WEB_SERVICE_URL: http://web:80
       JWT_ISSUER: bolao-user-service
       JWT_AUDIENCE: bolao-api
@@ -188,6 +223,8 @@ services:
       partidas-service:
         condition: service_started
       carteira-service:
+        condition: service_started
+      apostas-service:
         condition: service_started
       user-service:
         condition: service_started
@@ -208,4 +245,5 @@ services:
 volumes:
   partidas_db_data:
   carteira_db_data:
+  apostas_db_data:
   user_db_data:
