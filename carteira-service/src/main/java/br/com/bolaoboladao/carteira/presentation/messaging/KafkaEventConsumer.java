@@ -13,7 +13,6 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
-import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.jboss.logging.Logger;
@@ -72,7 +71,6 @@ public class KafkaEventConsumer {
         markProcessed(event.eventId(), event.eventType());
     }
 
-    // --- Helpers ---
 
     private <T> T parseEvent(String message, Class<T> type) {
         try {
