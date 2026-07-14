@@ -15,10 +15,11 @@
     <modules>
         <module>shared-contracts</module>
         <module>partidas-service</module>
+        <module>user-service</module>
+        <module>api-gateway</module>
+        <module>carteira-service</module>
         <!-- próximos módulos, à medida que o time entregar:
         <module>apostas-service</module>
-        <module>usuarios-service</module>
-        <module>carteira-service</module>
         -->
     </modules>
 

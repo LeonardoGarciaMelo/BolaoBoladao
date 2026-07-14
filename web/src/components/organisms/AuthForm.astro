@@ -1,0 +1,80 @@
+---
+import Button from "../atoms/Button.astro";
+import FormField from "../atoms/FormField.astro";
+import Icon from "../atoms/Icon.astro";
+
+interface Props {
+  mode: "login" | "register";
+}
+
+const { mode } = Astro.props;
+const registering = mode === "register";
+const copy = registering
+  ? { title: "Crie sua conta", description: "Seu palpite começa por aqui.", submit: "CRIAR CONTA", switchText: "Já está no jogo?", switchHref: "/login", switchAction: "ENTRAR" }
+  : { title: "Entre no jogo", description: "Acesse seus palpites e partidas favoritas.", submit: "ENTRAR", switchText: "Ainda não participa?", switchHref: "/registro", switchAction: "CRIAR MINHA CONTA" };
+---
+
+<section class="auth-panel" aria-labelledby="auth-title">
+  <div class="auth-panel__heading">
+    <Icon name="ball" size={29} />
+    <h2 id="auth-title">{copy.title}</h2>
+    <p>{copy.description}</p>
+  </div>
+  <form class="auth-form" data-auth-form data-mode={mode} novalidate>
+    {registering && <FormField id="name" label="NOME" autocomplete="name" required minLength={2} icon="user" placeholder="Como você quer ser chamado?" />}
+    <FormField id="username" label="USUÁRIO" autocomplete="username" required minLength={3} icon="user" placeholder="Digite seu usuário" />
+    <FormField id="password" label="SENHA" type="password" autocomplete={registering ? "new-password" : "current-password"} required minLength={12} icon="lock" placeholder="Digite sua senha" />
+    <p class="form-message" data-form-message role="alert" aria-live="polite"></p>
+    <Button type="submit" class="auth-form__submit">{copy.submit}<Icon name="arrow" size={19} /></Button>
+  </form>
+  <p class="auth-panel__switch">{copy.switchText} <a href={copy.switchHref}>{copy.switchAction}</a></p>
+</section>
+
+<script>
+  import { apiBaseUrl } from "../../scripts/session";
+
+  for (const form of document.querySelectorAll<HTMLFormElement>("[data-auth-form]")) {
+    const message = form.querySelector<HTMLElement>("[data-form-message]");
+    const submit = form.querySelector<HTMLButtonElement>("button[type=submit]");
+    const mode = form.dataset.mode;
+
+    if (mode === "login" && new URLSearchParams(window.location.search).has("registered") && message) {
+      message.textContent = "Conta criada. Entre para continuar.";
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity() || !message || !submit) return;
+      const data = new FormData(form);
+      const payload = mode === "register"
+        ? { name: data.get("name"), username: data.get("username"), password: data.get("password") }
+        : { username: data.get("username"), password: data.get("password") };
+
+      submit.disabled = true;
+      message.textContent = "";
+      message.dataset.error = "false";
+      try {
+        const response = await fetch(`${apiBaseUrl}/auth/${mode === "register" ? "register" : "login"}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || "Não foi possível concluir esta ação.");
+
+        if (mode === "register") {
+          window.location.assign("/login?registered=1");
+          return;
+        }
+
+        sessionStorage.setItem("bolao.access-token", result.accessToken);
+        window.location.assign("/partidas");
+      } catch (error) {
+        message.textContent = error instanceof Error ? error.message : "Erro inesperado.";
+        message.dataset.error = "true";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+</script>

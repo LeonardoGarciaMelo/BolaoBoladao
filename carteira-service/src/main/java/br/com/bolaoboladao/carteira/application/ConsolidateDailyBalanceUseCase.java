@@ -9,6 +9,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped

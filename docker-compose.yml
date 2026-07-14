@@ -1,13 +1,5 @@
-# docker-compose para o Perfil A (tudo em Docker).
-#
-# Cada serviço do bolão tem sua base de dados própria e segregada
-# (ver docs/arquitetura.md e ADR-001). Por enquanto só o partidas-service
-# está implementado; os demais (apostas, usuarios, carteira) e o Kafka
-# entram aqui à medida que o resto do grupo for entregando.
-#
-# Uso:
-#   docker compose up --build partidas-db partidas-service
-#   docker compose up -d partidas-db   # só o banco, pra rodar o serviço via IDE/mvn quarkus:dev
+# Perfil A: aplicações containerizadas. Gere as chaves de desenvolvimento
+# antes de subir (instruções no README): .secrets/jwt-private.pem e jwt-public.pem.
 
 services:
 
@@ -18,8 +10,8 @@ services:
       POSTGRES_DB: partidas_db
       POSTGRES_USER: bolao
       POSTGRES_PASSWORD: bolao
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     volumes:
       - partidas_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -77,8 +69,8 @@ services:
       PARTIDAS_DB_PASSWORD: bolao
       REDIS_HOSTS: redis://partidas-cache:6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "8081:8081"
+    expose:
+      - "8081"
     depends_on:
       partidas-db:
         condition: service_healthy
@@ -117,8 +109,8 @@ services:
 
   carteira-service:
     build:
-      context: .
-      dockerfile: carteira-service/Dockerfile
+      context: ./carteira-service
+      dockerfile: Dockerfile
     container_name: bolao-carteira-service
     environment:
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://carteira-db:5432/carteira_db
@@ -126,8 +118,8 @@ services:
       QUARKUS_DATASOURCE_PASSWORD: bolao
       QUARKUS_REDIS_HOSTS: redis://carteira-cache:6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "8082:8080"
+    expose:
+      - "8080"
     depends_on:
       carteira-db:
         condition: service_healthy
@@ -136,25 +128,82 @@ services:
       kafka:
         condition: service_healthy
 
-  api-gateway:
-    image: nginx:alpine
-    container_name: bolao-api-gateway
+  user-db:
+    image: postgres:16-alpine
+    container_name: bolao-user-db
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
     volumes:
-      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "80:80"
-    depends_on:
-      - partidas-service
-      - carteira-service
+      - user_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d user_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # --- placeholders para os próximos serviços do grupo ---
-  # apostas-db:
-  #   image: postgres:16-alpine
-  #   ...
-  # usuarios-db:
-  #   image: postgres:16-alpine
-  #   ...
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: bolao-user-service
+    environment:
+      USER_DB_URL: jdbc:postgresql://user-db:5432/user_db
+      USER_DB_USER: bolao
+      USER_DB_PASSWORD: bolao
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
+      JWT_EXPIRATION_SECONDS: 3600
+      JWT_PRIVATE_KEY_LOCATION: file:/run/secrets/jwt-private.pem
+    expose:
+      - "8082"
+    volumes:
+      - ./.secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: bolao-api-gateway
+    environment:
+      USER_SERVICE_URL: http://user-service:8082
+      PARTIDAS_SERVICE_URL: http://partidas-service:8081
+      CARTEIRA_SERVICE_URL: http://carteira-service:8080
+      WEB_SERVICE_URL: http://web:80
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
+      WEB_ORIGIN: http://localhost:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+    depends_on:
+      partidas-service:
+        condition: service_started
+      carteira-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        PUBLIC_API_BASE_URL: /api
+    container_name: bolao-web
+    expose:
+      - "80"
+    depends_on:
+      api-gateway:
+        condition: service_started
 
 volumes:
   partidas_db_data:
   carteira_db_data:
+  user_db_data:

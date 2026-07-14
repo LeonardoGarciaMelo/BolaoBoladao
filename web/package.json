@@ -1,0 +1,25 @@
+{
+  "name": "web",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test:e2e:gateway": "playwright test",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.2.8",
+    "@fontsource/manrope": "^5.2.8",
+    "@tailwindcss/vite": "^4.3.2",
+    "astro": "^7.0.7",
+    "tailwindcss": "^4.3.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

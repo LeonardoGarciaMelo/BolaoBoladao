@@ -27,7 +27,7 @@ public class DailyBalanceJob {
         var yesterday = LocalDate.now().minusDays(1);
         LOG.infof("Starting daily balance consolidation for date: %s", yesterday);
 
-        var wallets = walletRepository.findAll();
+        var wallets = walletRepository.findAllWallets();
         for (Wallet wallet : wallets) {
             try {
                 consolidateDailyBalanceUseCase.execute(wallet.id(), yesterday);

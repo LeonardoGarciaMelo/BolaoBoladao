@@ -1,5 +1,6 @@
 package br.com.bolaoboladao.carteira.infrastructure.persistence.entity;
 
+import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -20,10 +21,10 @@ public class LedgerEntity {
     private UUID walletId;
     
     @Enumerated(EnumType.STRING)
-    private String reason;
+    private Ledger.Reason reason;
     
     @Enumerated(EnumType.STRING)
-    private String operation;
+    private Ledger.Operation operation;
     
     private BigDecimal amount;
     
