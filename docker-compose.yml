@@ -209,7 +209,7 @@ services:
       USER_SERVICE_URL: http://user-service:8082
       PARTIDAS_SERVICE_URL: http://partidas-service:8081
       CARTEIRA_SERVICE_URL: http://carteira-service:8080
-      BETS_SERVICE_URL: http://apostas-service:8000
+      APOSTAS_SERVICE_URL: http://apostas-service:8000
       WEB_SERVICE_URL: http://web:80
       JWT_ISSUER: bolao-user-service
       JWT_AUDIENCE: bolao-api

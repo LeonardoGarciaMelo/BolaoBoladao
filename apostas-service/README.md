@@ -1,4 +1,4 @@
-# bets-service
+# apostas-service
 
 Python microservice responsible for receiving user bets and publishing `BET_CREATED` events to Kafka.
 

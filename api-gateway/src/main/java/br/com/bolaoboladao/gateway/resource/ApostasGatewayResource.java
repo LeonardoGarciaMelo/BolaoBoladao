@@ -22,7 +22,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 @Authenticated
 @RequestScoped
 @Produces(MediaType.APPLICATION_JSON)
-public class BetsGatewayResource {
+public class ApostasGatewayResource {
 
     @Inject
     BackendClient backendClient;
@@ -30,8 +30,8 @@ public class BetsGatewayResource {
     @Inject
     JsonWebToken token;
 
-    @ConfigProperty(name = "bets-service.url")
-    String betsServiceUrl;
+    @ConfigProperty(name = "apostas-service.url")
+    String apostasServiceUrl;
 
     @GET
     public Uni<Response> list(@Context UriInfo uriInfo) {
@@ -66,7 +66,7 @@ public class BetsGatewayResource {
     }
 
     private String target(String path, UriInfo uriInfo) {
-        StringBuilder target = new StringBuilder(betsServiceUrl).append("/bets");
+        StringBuilder target = new StringBuilder(apostasServiceUrl).append("/bets");
         if (!path.isBlank()) {
             target.append('/').append(path);
         }
