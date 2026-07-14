@@ -25,6 +25,12 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
         entity.setOperation(ledger.operation());
         entity.setAmount(ledger.amount());
         entity.setOccurredAt(ledger.occurredAt());
+        entity.setReferenceId(ledger.referenceId());
+        entity.setCreatedBy(ledger.createdBy());
+        entity.setNote(ledger.note());
+        entity.setIdempotencyKey(ledger.idempotencyKey());
+        entity.setBalanceBefore(ledger.balanceBefore());
+        entity.setBalanceAfter(ledger.balanceAfter());
         return persist(entity).replaceWithVoid();
     }
 
@@ -51,6 +57,34 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
                 .onItem().transform(list -> list.stream().map(this::toDomain).toList());
     }
 
+    @Override
+    public Uni<Ledger> findByIdempotencyKey(String idempotencyKey) {
+        return find("idempotencyKey", idempotencyKey).firstResult()
+                .onItem().ifNotNull().transform(this::toDomain);
+    }
+
+    @Override
+    public Uni<Void> lockIdempotencyKey(String idempotencyKey) {
+        return getSession().flatMap(session -> session
+                        .createNativeQuery("select pg_advisory_xact_lock(hashtextextended(:idempotencyKey, 0))::text")
+                        .setParameter("idempotencyKey", idempotencyKey)
+                        .getSingleResult())
+                .replaceWithVoid();
+    }
+
+    @Override
+    public Uni<List<Ledger>> findAdminCredits(int offset, int size, java.time.LocalDateTime until) {
+        return find("reason = ?1 and occurredAt <= ?2", Sort.by("occurredAt").descending(),
+                        Ledger.Reason.ADMIN_CREDIT, until)
+                .range(offset, offset + size - 1).list()
+                .onItem().transform(list -> list.stream().map(this::toDomain).toList());
+    }
+
+    @Override
+    public Uni<Long> countAdminCredits(java.time.LocalDateTime until) {
+        return count("reason = ?1 and occurredAt <= ?2", Ledger.Reason.ADMIN_CREDIT, until);
+    }
+
     private Ledger toDomain(LedgerEntity entity) {
         return new Ledger(
                 entity.getId(),
@@ -58,7 +92,13 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
                 entity.getReason(),
                 entity.getOperation(),
                 entity.getAmount(),
-                entity.getOccurredAt()
+                entity.getOccurredAt(),
+                entity.getReferenceId(),
+                entity.getCreatedBy(),
+                entity.getNote(),
+                entity.getIdempotencyKey(),
+                entity.getBalanceBefore(),
+                entity.getBalanceAfter()
         );
     }
 }

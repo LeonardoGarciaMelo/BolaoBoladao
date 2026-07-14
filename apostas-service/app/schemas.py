@@ -29,3 +29,12 @@ class BetCreatedEvent(BaseModel):
     betId: UUID
     userId: UUID
     amount: Decimal
+
+
+class RefundProgressResponse(BaseModel):
+    match_id: UUID
+    status: str
+    total: int
+    pending: int
+    completed: int
+    failed: int

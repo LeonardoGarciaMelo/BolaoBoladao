@@ -43,6 +43,22 @@ public class BackendClient {
                 .send().toCompletionStage());
     }
 
+    public Uni<HttpResponse<Buffer>> adminGet(String url, String authenticatedUserId, String authorization) {
+        return Uni.createFrom().completionStage(authenticatedGet(url, authenticatedUserId)
+                .putHeader("Authorization", authorization)
+                .send().toCompletionStage());
+    }
+
+    public Uni<HttpResponse<Buffer>> adminPost(String url, String authenticatedUserId, String authorization,
+                                                String idempotencyKey, String body) {
+        HttpRequest<Buffer> request = authenticatedPost(url, authenticatedUserId)
+                .putHeader("Authorization", authorization);
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            request.putHeader("Idempotency-Key", idempotencyKey);
+        }
+        return Uni.createFrom().completionStage(request.sendBuffer(Buffer.buffer(body)).toCompletionStage());
+    }
+
     private HttpRequest<Buffer> authenticatedGet(String url, String authenticatedUserId) {
         return webClient.getAbs(url)
                 .putHeader("Content-Type", "application/json")

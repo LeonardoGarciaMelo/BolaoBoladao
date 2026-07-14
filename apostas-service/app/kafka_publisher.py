@@ -23,7 +23,7 @@ class KafkaPublisher:
             await self._producer.stop()
             self._producer = None
 
-    async def publish(self, payload: dict[str, Any], key: str) -> None:
+    async def publish(self, payload: dict[str, Any], key: str, topic: str | None = None) -> None:
         if self._producer is None:
             raise RuntimeError("Kafka producer is not started")
-        await self._producer.send_and_wait(self._topic, payload, key=key.encode("utf-8"))
+        await self._producer.send_and_wait(topic or self._topic, payload, key=key.encode("utf-8"))

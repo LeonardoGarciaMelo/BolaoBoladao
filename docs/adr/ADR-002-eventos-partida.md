@@ -11,11 +11,11 @@ comunicação precisa ser assíncrona (critério 2 da rubrica) e não pode
 perder eventos nem duplicá-los de forma que quebre a apuração
 (critério 3 — idempotência).
 
-Hoje, cada transição de partida (`iniciar`, `gol`, `encerrar`) já grava um
+Hoje, cada transição de partida (`criar`, `iniciar`, `gol`, `encerrar`, `cancelar`) grava um
 registro em `match_event` na mesma transação que altera o `match` — essa
 tabela é a fonte de verdade interna e append-only.
 
-## Decisão (proposta)
+## Decisão
 Publicar no tópico Kafka `match-events` a partir da tabela `match_event`,
 usando o padrão **transactional outbox**: a escrita em `match_event` e o
 "agendamento" da publicação acontecem na mesma transação de banco; um
@@ -46,5 +46,7 @@ permitindo que o consumidor (Apostas) implemente idempotência por chave.
 - Precisa de um worker (scheduled job do Quarkus, `@Scheduled`) fazendo o
   polling — soma complexidade, mas evita depender de Debezium/CDC para o
   escopo deste projeto.
-- Este ADR deve ser atualizado para "Aceito" quando a implementação entrar,
-  com o caminho do código como evidência (critério 7 da rubrica).
+- O relay está implementado em `MatchOutboxRelay`; `match_event.published`
+  controla a confirmação e o lote para no primeiro erro para preservar ordem.
+- `MATCH_CANCELED` inclui administrador e justificativa e inicia a saga descrita
+  no ADR-004.

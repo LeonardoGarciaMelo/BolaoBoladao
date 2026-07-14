@@ -47,11 +47,9 @@ public class GetWalletBalanceUseCase {
 
     public Uni<BigDecimal> calculateBalanceFromDatabase(UUID userId) {
         return walletRepository.findByUserId(userId)
-                .onItem().ifNull().switchTo(() -> {
-                    Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
-                    return walletRepository.save(newWallet).replaceWith(newWallet);
-                })
-                .flatMap(this::calculateCurrentBalance);
+                .flatMap(wallet -> wallet == null
+                        ? Uni.createFrom().item(BigDecimal.ZERO)
+                        : calculateCurrentBalance(wallet));
     }
 
     private Uni<BigDecimal> calculateAndCache(UUID userId) {

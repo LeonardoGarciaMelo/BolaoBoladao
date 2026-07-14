@@ -1,0 +1,85 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import AdminShell from "../../components/templates/AdminShell.astro";
+---
+<Layout title="Carteiras | Admin Bolão Boladão">
+  <AdminShell active="wallets" eyebrow="OPERAÇÃO FINANCEIRA" title="Carteiras">
+    <div class="admin-split admin-wallet-layout">
+      <section class="admin-card">
+        <header class="admin-card__header"><div><p>DESTINATÁRIO</p><h2>Buscar usuário</h2></div></header>
+        <form class="admin-search" data-user-search><input name="q" type="search" minlength="2" placeholder="Nome ou username" required /><button>BUSCAR</button></form>
+        <div class="admin-user-results" data-user-results><p class="admin-empty">Digite ao menos dois caracteres para começar.</p></div>
+      </section>
+      <section class="admin-card admin-credit-panel" data-credit-panel aria-disabled="true">
+        <header class="admin-card__header"><div><p>CRÉDITO ADMINISTRATIVO</p><h2>Adicionar saldo</h2></div></header>
+        <div class="admin-selected-user" data-selected-user><p>Selecione um usuário nos resultados.</p></div>
+        <form class="admin-form" data-credit-form hidden>
+          <label>VALOR EM REAIS<div class="admin-money-input"><span>R$</span><input name="amount" inputmode="decimal" placeholder="0,00" required /></div></label>
+          <label>JUSTIFICATIVA<textarea name="reason" minlength="10" maxlength="500" required placeholder="Explique por que este crédito está sendo concedido"></textarea></label>
+          <p class="admin-form__message" data-credit-message role="alert"></p>
+          <button class="admin-action" type="submit">REVISAR CRÉDITO</button>
+        </form>
+      </section>
+    </div>
+    <dialog class="admin-dialog" data-credit-dialog>
+      <div><span class="admin-dialog__eyebrow">CONFIRMAÇÃO FINANCEIRA</span><h2>Revisar crédito</h2>
+        <dl class="admin-credit-review"><div><dt>Usuário</dt><dd data-review-user></dd></div><div><dt>Saldo atual</dt><dd data-review-before></dd></div><div><dt>Crédito</dt><dd data-review-amount></dd></div><div><dt>Novo saldo</dt><dd data-review-after></dd></div></dl>
+        <p data-review-reason></p><p class="admin-form__message" data-dialog-message role="alert"></p>
+        <div class="admin-dialog__actions"><button class="admin-secondary" data-credit-back>VOLTAR</button><button class="admin-action" data-credit-confirm>CONFIRMAR CRÉDITO</button></div>
+      </div>
+    </dialog>
+    <dialog class="admin-dialog admin-receipt" data-receipt-dialog><div><span class="admin-dialog__eyebrow">LANÇAMENTO CONCLUÍDO</span><h2>Crédito registrado</h2><p data-receipt-copy></p><code data-receipt-id></code><div class="admin-dialog__actions"><button class="admin-action" data-receipt-close>FECHAR</button></div></div></dialog>
+  </AdminShell>
+</Layout>
+
+<script>
+  import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
+  type User = { id: string; name: string; username: string };
+  type Wallet = { userId: string; walletId: string; balanceCents: number };
+  let selectedUser: User | undefined; let selectedWallet: Wallet | undefined; let pending: { amountCents: number; reason: string; idempotencyKey: string } | undefined;
+  const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const results = document.querySelector<HTMLElement>("[data-user-results]");
+  const creditForm = document.querySelector<HTMLFormElement>("[data-credit-form]");
+  const reviewDialog = document.querySelector<HTMLDialogElement>("[data-credit-dialog]");
+  const receiptDialog = document.querySelector<HTMLDialogElement>("[data-receipt-dialog]");
+  const formatCents = (value: number) => currency.format(value / 100);
+  const parseCents = (value: string) => Math.round(Number(value.replace(/\./g, "").replace(",", ".")) * 100);
+
+  document.querySelector<HTMLFormElement>("[data-user-search]")?.addEventListener("submit", async (event) => {
+    event.preventDefault(); await requireAdmin(); const data = new FormData(event.currentTarget);
+    const response = await authenticatedFetch(`/admin/users?q=${encodeURIComponent(String(data.get("q")))}&page=0&size=20`);
+    const page = await response.json(); results?.replaceChildren();
+    if (!page.items?.length) { const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhum usuário encontrado."; results?.append(empty); return; }
+    for (const user of page.items as User[]) {
+      const button = document.createElement("button"); const copy = document.createElement("span"); const name = document.createElement("strong"); const username = document.createElement("small");
+      name.textContent = user.name; username.textContent = `@${user.username}`; copy.append(name, username); const id = document.createElement("code"); id.textContent = user.id; button.append(copy, id);
+      button.addEventListener("click", () => void selectUser(user)); results?.append(button);
+    }
+  });
+
+  const selectUser = async (user: User) => {
+    selectedUser = user; const response = await authenticatedFetch(`/admin/wallets/users/${user.id}`); selectedWallet = await response.json();
+    const card = document.querySelector<HTMLElement>("[data-selected-user]")!; card.replaceChildren(); const name = document.createElement("strong"); name.textContent = user.name; const username = document.createElement("span"); username.textContent = `@${user.username} · ${user.id}`; const balance = document.createElement("b"); balance.textContent = `Saldo ${formatCents(selectedWallet!.balanceCents)}`; card.append(name, username, balance);
+    document.querySelector<HTMLElement>("[data-credit-panel]")?.setAttribute("aria-disabled", "false");
+    if (creditForm) creditForm.hidden = false;
+  };
+
+  creditForm?.addEventListener("submit", (event) => {
+    event.preventDefault(); if (!creditForm.reportValidity() || !selectedUser || !selectedWallet) return; const data = new FormData(creditForm); const amountCents = parseCents(String(data.get("amount"))); const reason = String(data.get("reason")).trim(); const message = document.querySelector<HTMLElement>("[data-credit-message]")!;
+    if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 1_000_000) { message.textContent = "Informe um valor entre R$ 0,01 e R$ 10.000,00."; return; }
+    message.textContent = ""; pending = { amountCents, reason, idempotencyKey: createIdempotencyKey() };
+    document.querySelector<HTMLElement>("[data-review-user]")!.textContent = `${selectedUser.name} (@${selectedUser.username})`;
+    document.querySelector<HTMLElement>("[data-review-before]")!.textContent = formatCents(selectedWallet.balanceCents);
+    document.querySelector<HTMLElement>("[data-review-amount]")!.textContent = formatCents(amountCents);
+    document.querySelector<HTMLElement>("[data-review-after]")!.textContent = formatCents(selectedWallet.balanceCents + amountCents);
+    document.querySelector<HTMLElement>("[data-review-reason]")!.textContent = reason; reviewDialog?.showModal();
+  });
+  document.querySelector("[data-credit-back]")?.addEventListener("click", () => reviewDialog?.close());
+  document.querySelector("[data-credit-confirm]")?.addEventListener("click", async () => {
+    if (!selectedUser || !pending) return; const button = document.querySelector<HTMLButtonElement>("[data-credit-confirm]")!; button.disabled = true;
+    const response = await authenticatedFetch(`/admin/wallets/users/${selectedUser.id}/credits`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.idempotencyKey }, body: JSON.stringify({ amountCents: pending.amountCents, reason: pending.reason }) }); const result = await response.json().catch(() => ({})); button.disabled = false;
+    if (!response.ok) { document.querySelector<HTMLElement>("[data-dialog-message]")!.textContent = result.message || result.error || "Não foi possível registrar o crédito."; return; }
+    selectedWallet = { userId: result.userId, walletId: result.walletId, balanceCents: result.balanceAfterCents }; pending = undefined; reviewDialog?.close(); creditForm?.reset(); document.querySelector<HTMLElement>("[data-receipt-copy]")!.textContent = `${formatCents(result.amountCents)} creditados para @${selectedUser.username}. Novo saldo: ${formatCents(result.balanceAfterCents)}.`; document.querySelector<HTMLElement>("[data-receipt-id]")!.textContent = result.ledgerEntryId; receiptDialog?.showModal(); await selectUser(selectedUser);
+  });
+  document.querySelector("[data-receipt-close]")?.addEventListener("click", () => receiptDialog?.close());
+</script>

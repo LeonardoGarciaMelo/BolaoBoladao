@@ -11,7 +11,10 @@ public record LedgerEntryResponse(
         String reason,
         String operation,
         BigDecimal amount,
-        LocalDateTime occurredAt
+        LocalDateTime occurredAt,
+        UUID referenceId,
+        UUID createdBy,
+        String note
 ) {
     public static LedgerEntryResponse from(Ledger ledger) {
         return new LedgerEntryResponse(
@@ -19,7 +22,10 @@ public record LedgerEntryResponse(
                 ledger.reason().name(),
                 ledger.operation().name(),
                 ledger.amount(),
-                ledger.occurredAt()
+                ledger.occurredAt(),
+                ledger.referenceId(),
+                ledger.createdBy(),
+                ledger.note()
         );
     }
 }

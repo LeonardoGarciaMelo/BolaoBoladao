@@ -19,7 +19,10 @@ public final class MatchMapper {
                 match.teamAwayScore,
                 match.start,
                 match.end,
-                match.status
+                match.status,
+                match.canceledAt,
+                match.canceledBy,
+                match.cancelReason
         );
     }
 
@@ -29,7 +32,9 @@ public final class MatchMapper {
                 event.eventType,
                 event.teamHomeScoreAtEvent,
                 event.teamAwayScoreAtEvent,
-                event.occurredAt
+                event.occurredAt,
+                event.actorId,
+                event.reason
         );
     }
 }

@@ -39,17 +39,24 @@ public class ProcessBetPaymentUseCase {
 
     @WithTransaction
     public Uni<Void> executeBetCreated(UUID betId, UUID userId, BigDecimal amount) {
-        return findAndLockWalletOrThrow(userId)
+        String idempotencyKey = "bet-debit:" + betId;
+        return ledgerRepository.lockIdempotencyKey(idempotencyKey)
+                .flatMap(ignored -> ledgerRepository.findByIdempotencyKey(idempotencyKey))
+                .flatMap(existing -> existing != null
+                        ? paymentEventPublisher.publishPaymentAccepted(betId)
+                        : findAndLockWalletOrThrow(userId)
                 .flatMap(wallet -> getWalletBalanceUseCase.calculateBalanceFromDatabase(userId)
                         .flatMap(currentBalance -> {
                             if (currentBalance.compareTo(amount) < 0) {
                                 return paymentEventPublisher.publishPaymentRefused(betId);
                             }
-                            return recordLedgerEntry(wallet.id(), Ledger.Reason.BET, Ledger.Operation.DEBIT, amount)
+                            return ledgerRepository.save(new Ledger(UUID.randomUUID(), wallet.id(), Ledger.Reason.BET,
+                                            Ledger.Operation.DEBIT, amount, LocalDateTime.now(), betId, null,
+                                            "Débito do palpite", idempotencyKey, currentBalance, currentBalance.subtract(amount)))
                                     .flatMap(ignore -> walletCache.invalidateBalance(userId))
                                     .flatMap(ignore -> walletCache.invalidateStatement(wallet.id()))
                                     .flatMap(ignore -> paymentEventPublisher.publishPaymentAccepted(betId));
-                        }));
+                        })));
     }
 
     @WithTransaction
@@ -60,12 +67,48 @@ public class ProcessBetPaymentUseCase {
                         .flatMap(ignore -> walletCache.invalidateStatement(wallet.id())));
     }
 
-    private Uni<Wallet> findAndLockWalletOrThrow(UUID userId) {
-        return walletRepository.findAndLockByUserId(userId)
-                .onItem().ifNull().switchTo(() -> {
-                    Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
-                    return walletRepository.save(newWallet).replaceWith(newWallet);
+    @WithTransaction
+    public Uni<Void> executeBetRefundRequested(UUID betId, UUID userId, BigDecimal amount) {
+        String idempotencyKey = "bet-refund:" + betId;
+        return ledgerRepository.lockIdempotencyKey(idempotencyKey)
+                .flatMap(ignored -> ledgerRepository.findByIdempotencyKey(idempotencyKey))
+                .flatMap(existing -> {
+                    if (existing != null) {
+                        return paymentEventPublisher.publishPaymentRefunded(betId);
+                    }
+                    return ledgerRepository.findByIdempotencyKey("bet-debit:" + betId)
+                            .flatMap(debit -> {
+                                if (debit == null || debit.reason() != Ledger.Reason.BET || !debit.isDebit()) {
+                                    return Uni.createFrom().failure(new IllegalStateException(
+                                            "Débito original não encontrado para o estorno " + betId));
+                                }
+                                return findAndLockWalletOrThrow(userId)
+                                        .flatMap(wallet -> {
+                                            if (!wallet.id().equals(debit.walletId())) {
+                                                return Uni.createFrom().failure(new IllegalStateException(
+                                                        "Débito original não pertence à carteira do usuário " + userId));
+                                            }
+                                            return getWalletBalanceUseCase.calculateBalanceFromDatabase(userId)
+                                                .flatMap(before -> ledgerRepository.save(new Ledger(
+                                                        UUID.randomUUID(), wallet.id(), Ledger.Reason.BET_REFUND,
+                                                        Ledger.Operation.CREDIT, debit.amount(), LocalDateTime.now(), debit.id(),
+                                                        null, "Estorno por cancelamento de partida", idempotencyKey,
+                                                        before, before.add(debit.amount())
+                                                )).flatMap(ignored -> walletCache.invalidateBalance(userId))
+                                                        .flatMap(ignored -> walletCache.invalidateStatement(wallet.id()))
+                                                        .flatMap(ignored -> paymentEventPublisher.publishPaymentRefunded(betId)));
+                                        });
+                            });
                 });
+    }
+
+    private Uni<Wallet> findAndLockWalletOrThrow(UUID userId) {
+        return walletRepository.lockUser(userId)
+                .flatMap(ignored -> walletRepository.findAndLockByUserId(userId)
+                        .onItem().ifNull().switchTo(() -> {
+                            Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
+                            return walletRepository.save(newWallet).replaceWith(newWallet);
+                        }));
     }
 
     private Uni<Void> recordLedgerEntry(UUID walletId, Ledger.Reason reason, Ledger.Operation operation, BigDecimal amount) {

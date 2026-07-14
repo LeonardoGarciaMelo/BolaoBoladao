@@ -2,7 +2,7 @@ package br.com.bolaoboladao.partidas.dto;
 
 import br.com.bolaoboladao.partidas.domain.MatchStatus;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record MatchResponse(
@@ -11,8 +11,11 @@ public record MatchResponse(
         String teamAway,
         Integer teamHomeScore,
         Integer teamAwayScore,
-        LocalDateTime start,
-        LocalDateTime end,
-        MatchStatus status
+        OffsetDateTime start,
+        OffsetDateTime end,
+        MatchStatus status,
+        OffsetDateTime canceledAt,
+        UUID canceledBy,
+        String cancelReason
 ) {
 }

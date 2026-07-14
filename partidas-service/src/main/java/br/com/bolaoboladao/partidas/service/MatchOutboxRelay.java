@@ -13,7 +13,7 @@ import org.eclipse.microprofile.reactive.messaging.Message;
 import org.eclipse.microprofile.reactive.messaging.Metadata;
 import org.jboss.logging.Logger;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -37,7 +37,9 @@ public class MatchOutboxRelay {
             UUID match_id,
             String event_type,
             ScoreDto score,
-            LocalDateTime occurred_at
+            OffsetDateTime occurred_at,
+            UUID actor_id,
+            String reason
     ) {}
 
     @Scheduled(every = "2s", delayed = "5s", concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
@@ -62,7 +64,9 @@ public class MatchOutboxRelay {
                         event.match.id,
                         event.eventType.name(),
                         score,
-                        event.occurredAt
+                        event.occurredAt,
+                        event.actorId,
+                        event.reason
                 );
 
                 // 3. Monta o metadado Kafka para usar a partida como chave (garante ordenação no mesmo tópico/partição)

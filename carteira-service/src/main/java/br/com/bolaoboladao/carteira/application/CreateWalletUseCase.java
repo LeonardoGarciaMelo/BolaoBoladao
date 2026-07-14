@@ -21,7 +21,8 @@ public class CreateWalletUseCase {
 
     @WithTransaction
     public Uni<Void> execute(UUID userId) {
-        return walletRepository.findByUserId(userId)
+        return walletRepository.lockUser(userId)
+                .flatMap(ignored -> walletRepository.findByUserId(userId))
                 .flatMap(wallet -> {
                     if (wallet != null) {
                         return Uni.createFrom().voidItem();

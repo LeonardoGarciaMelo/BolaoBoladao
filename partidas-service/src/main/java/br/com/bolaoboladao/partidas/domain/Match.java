@@ -13,7 +13,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -47,10 +47,22 @@ public class Match extends PanacheEntityBase {
 
     @NotNull
     @Column(name = "start_at", nullable = false)
-    public LocalDateTime start;
+    public OffsetDateTime start;
 
     @Column(name = "end_at")
-    public LocalDateTime end;
+    public OffsetDateTime end;
+
+    @Column(name = "canceled_at")
+    public OffsetDateTime canceledAt;
+
+    @Column(name = "canceled_by")
+    public UUID canceledBy;
+
+    @Column(name = "cancel_reason", length = 500)
+    public String cancelReason;
+
+    @Column(name = "cancel_idempotency_key", unique = true, length = 100)
+    public String cancelIdempotencyKey;
 
     @NotNull
     @Enumerated(EnumType.STRING)
@@ -58,17 +70,17 @@ public class Match extends PanacheEntityBase {
     public MatchStatus status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    public LocalDateTime createdAt;
+    public OffsetDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    public LocalDateTime updatedAt;
+    public OffsetDateTime updatedAt;
 
     public Match() {
     }
 
     @jakarta.persistence.PrePersist
     void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(java.time.ZoneOffset.UTC);
         this.createdAt = now;
         this.updatedAt = now;
         if (this.status == null) {
@@ -78,6 +90,6 @@ public class Match extends PanacheEntityBase {
 
     @jakarta.persistence.PreUpdate
     void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
     }
 }

@@ -19,6 +19,13 @@ public class PartidasBackendStub implements BeforeAllCallback, AfterAllCallback 
             exchange.getResponseBody().write("[]".getBytes());
             exchange.close();
         });
+        server.createContext("/admin/partidas", exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            byte[] body = "{\"items\":[],\"page\":0,\"size\":20,\"total\":0}".getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
         server.start();
     }
 

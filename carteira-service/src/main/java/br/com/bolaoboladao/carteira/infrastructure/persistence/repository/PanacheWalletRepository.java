@@ -35,6 +35,15 @@ public class PanacheWalletRepository implements WalletRepository, PanacheReposit
     }
 
     @Override
+    public Uni<Void> lockUser(UUID userId) {
+        return getSession().flatMap(session -> session
+                        .createNativeQuery("select pg_advisory_xact_lock(hashtextextended(:userId, 0))::text")
+                        .setParameter("userId", userId.toString())
+                        .getSingleResult())
+                .replaceWithVoid();
+    }
+
+    @Override
     public Uni<List<Wallet>> findWalletsPaged(int page, int size) {
         return findAll().page(page, size).list()
                 .onItem().transform(list -> list.stream().map(this::toDomain).toList());

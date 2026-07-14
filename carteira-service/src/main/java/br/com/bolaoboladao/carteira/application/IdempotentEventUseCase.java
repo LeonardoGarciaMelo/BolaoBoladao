@@ -2,6 +2,7 @@ package br.com.bolaoboladao.carteira.application;
 
 import br.com.bolaoboladao.carteira.application.repository.ProcessedEventRepository;
 import io.smallrye.mutiny.Uni;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -20,6 +21,7 @@ public class IdempotentEventUseCase {
         this.processedEventRepository = processedEventRepository;
     }
 
+    @WithTransaction
     public Uni<Void> execute(UUID eventId, String eventType, Supplier<Uni<Void>> action) {
         if (eventId == null) {
             return action.get();

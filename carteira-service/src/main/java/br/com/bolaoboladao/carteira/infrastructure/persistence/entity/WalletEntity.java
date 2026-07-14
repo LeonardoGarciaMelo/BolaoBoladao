@@ -13,5 +13,6 @@ import java.util.UUID;
 public class WalletEntity {
     @Id
     private UUID id;
+    @jakarta.persistence.Column(nullable = false)
     private UUID userId;
 }

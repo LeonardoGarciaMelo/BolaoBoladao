@@ -69,6 +69,7 @@ versionada nem compartilhada fora do ambiente local.
 mkdir -p .secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .secrets/jwt-private.pem
 openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
+openssl rand -base64 24 > .secrets/admin-password
 docker compose up --build
 ```
 
@@ -81,6 +82,12 @@ O fluxo é cadastro (`POST /api/auth/register`) → login
 `GET /api/partidas`. O gateway valida assinatura RS256, issuer, audience e
 expiração antes de encaminhar a chamada. Access tokens duram uma hora e não há
 refresh token nesta versão.
+
+O Compose cria o primeiro administrador a partir de `.secrets/admin-password`
+e das variáveis `ADMIN_BOOTSTRAP_NAME` e `ADMIN_BOOTSTRAP_USERNAME`. A criação
+é idempotente: reinícios não trocam a senha e uma colisão com usuário comum
+impede o startup. Após o login, `GET /api/auth/me` retorna identidade e roles;
+`ADMIN` segue para `/admin` e `USER` para `/partidas`.
 
 A carteira também é acessada exclusivamente com Bearer JWT pelo gateway:
 `GET /api/wallet/{userId}/balance` e
@@ -118,23 +125,32 @@ mvn -pl partidas-service -am -PC test -Dtest='!*ResourceTest'
 
 (roda apenas testes que não exigem `@QuarkusTest`/Testcontainers).
 
-### Testes de integração (Testcontainers — exige Docker)
+### Testes automatizados pelo Compose
 
 ```bash
-mvn -pl partidas-service -am verify
+docker compose --profile test run --rm backend-tests
+docker compose --profile test run --rm apostas-tests
+docker compose --profile test run --rm web-e2e
 ```
 
-## Endpoints — `partidas-service`
+O Playwright usa `http://api-gateway:8080`, nunca um backend diretamente.
+
+## Endpoints administrativos — gateway
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `POST` | `/partidas` | Cria uma partida (cria os times se não existirem) |
-| `GET` | `/partidas` | Lista todas as partidas |
-| `GET` | `/partidas/{id}` | Detalhe de uma partida |
-| `GET` | `/partidas/{id}/eventos` | Histórico de eventos da partida |
-| `POST` | `/partidas/{id}/iniciar` | Inicia a partida (`SCHEDULED` → `IN_PROGRESS`) |
-| `POST` | `/partidas/{id}/gol` | Registra gol (`{"side": "HOME"\|"AWAY"}`) |
-| `POST` | `/partidas/{id}/encerrar` | Encerra a partida (`IN_PROGRESS` → `FINISHED`) |
+| `GET` | `/api/admin/users` | Busca paginada por nome/username |
+| `GET` | `/api/admin/teams` | Autocomplete de times |
+| `GET/POST` | `/api/admin/partidas` | Lista e cria partidas |
+| `POST` | `/api/admin/partidas/{id}/cancel` | Cancela com justificativa e `Idempotency-Key` |
+| `GET` | `/api/admin/partidas/{id}/refunds` | Progresso dos estornos |
+| `POST` | `/api/admin/partidas/{id}/refunds/retry` | Reprocessa estornos que terminaram em `FAILED` |
+| `GET` | `/api/admin/wallets/users/{userId}` | Carteira e saldo do usuário |
+| `POST` | `/api/admin/wallets/users/{userId}/credits` | Crédito administrativo em centavos |
+| `GET` | `/api/admin/activity` | Linha do tempo composta com cursor opaco e snapshot estável |
+
+As mutações antigas de `/api/partidas/**` foram removidas; essa família fica
+somente para leitura autenticada.
 
 ## Estrutura do repositório
 

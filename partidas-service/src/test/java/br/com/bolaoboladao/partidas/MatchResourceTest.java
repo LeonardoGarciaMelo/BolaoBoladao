@@ -4,12 +4,18 @@ import br.com.bolaoboladao.partidas.cache.MatchCache;
 import br.com.bolaoboladao.partidas.dto.MatchResponse;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
+import io.smallrye.jwt.algorithm.SignatureAlgorithm;
+import io.smallrye.jwt.build.Jwt;
+import io.smallrye.jwt.util.KeyUtils;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -19,12 +25,14 @@ import static org.hamcrest.Matchers.notNullValue;
 @QuarkusTest
 class MatchResourceTest {
 
+    private static final String ADMIN_ID = "22121193-3c26-4c26-812d-123456789012";
+
     @Inject
     MatchCache matchCache;
 
     @Test
     void deveCriarPartidaIniciarMarcarGolEEncerrar() {
-        String start = LocalDateTime.now().plusHours(1).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        String start = OffsetDateTime.now().plusHours(1).toString();
 
         String body = """
                 {
@@ -35,9 +43,10 @@ class MatchResourceTest {
                 """.formatted(start);
 
         String matchId = given()
+                .header("Authorization", "Bearer " + adminToken())
                 .contentType(ContentType.JSON)
                 .body(body)
-                .when().post("/partidas")
+                .when().post("/admin/partidas")
                 .then()
                 .statusCode(201)
                 .body("teamHome", equalTo("Flamengo"))
@@ -46,22 +55,25 @@ class MatchResourceTest {
                 .extract().path("id");
 
         given()
-                .when().post("/partidas/{id}/iniciar", matchId)
+                .header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/iniciar", matchId)
                 .then()
                 .statusCode(200)
                 .body("status", equalTo("IN_PROGRESS"));
 
         given()
+                .header("Authorization", "Bearer " + adminToken())
                 .contentType(ContentType.JSON)
                 .body("{\"side\": \"HOME\"}")
-                .when().post("/partidas/{id}/gol", matchId)
+                .when().post("/admin/partidas/{id}/gol", matchId)
                 .then()
                 .statusCode(200)
                 .body("teamHomeScore", equalTo(1))
                 .body("teamAwayScore", equalTo(0));
 
         given()
-                .when().post("/partidas/{id}/encerrar", matchId)
+                .header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/encerrar", matchId)
                 .then()
                 .statusCode(200)
                 .body("status", equalTo("FINISHED"))
@@ -71,15 +83,16 @@ class MatchResourceTest {
                 .when().get("/partidas/{id}/eventos", matchId)
                 .then()
                 .statusCode(200)
-                .body("size()", is(3))
-                .body("[0].eventType", equalTo("MATCH_STARTED"))
-                .body("[1].eventType", equalTo("TEAM_HOME_SCORED"))
-                .body("[2].eventType", equalTo("MATCH_ENDED"));
+                .body("size()", is(4))
+                .body("[0].eventType", equalTo("MATCH_CREATED"))
+                .body("[1].eventType", equalTo("MATCH_STARTED"))
+                .body("[2].eventType", equalTo("TEAM_HOME_SCORED"))
+                .body("[3].eventType", equalTo("MATCH_ENDED"));
     }
 
     @Test
     void naoDeveMarcarGolEmPartidaNaoIniciada() {
-        String start = LocalDateTime.now().plusHours(1).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        String start = OffsetDateTime.now().plusHours(1).toString();
 
         String body = """
                 {
@@ -90,17 +103,19 @@ class MatchResourceTest {
                 """.formatted(start);
 
         String matchId = given()
+                .header("Authorization", "Bearer " + adminToken())
                 .contentType(ContentType.JSON)
                 .body(body)
-                .when().post("/partidas")
+                .when().post("/admin/partidas")
                 .then()
                 .statusCode(201)
                 .extract().path("id");
 
         given()
+                .header("Authorization", "Bearer " + adminToken())
                 .contentType(ContentType.JSON)
                 .body("{\"side\": \"HOME\"}")
-                .when().post("/partidas/{id}/gol", matchId)
+                .when().post("/admin/partidas/{id}/gol", matchId)
                 .then()
                 .statusCode(409);
     }
@@ -115,7 +130,7 @@ class MatchResourceTest {
 
     @Test
     void deveTestarCacheEOutbox() throws InterruptedException {
-        String start = LocalDateTime.now().plusHours(1).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        String start = OffsetDateTime.now().plusHours(1).toString();
         String body = """
                 {
                   "teamHomeName": "Santos",
@@ -125,9 +140,10 @@ class MatchResourceTest {
                 """.formatted(start);
 
         String matchIdStr = given()
+                .header("Authorization", "Bearer " + adminToken())
                 .contentType(ContentType.JSON)
                 .body(body)
-                .when().post("/partidas")
+                .when().post("/admin/partidas")
                 .then()
                 .statusCode(201)
                 .extract().path("id");
@@ -151,7 +167,8 @@ class MatchResourceTest {
 
         // 4. Iniciar a partida (deve invalidar cache e registrar evento)
         given()
-                .when().post("/partidas/{id}/iniciar", matchIdStr)
+                .header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/iniciar", matchIdStr)
                 .then()
                 .statusCode(200);
 
@@ -171,5 +188,115 @@ class MatchResourceTest {
             }
         }
         org.junit.jupiter.api.Assertions.assertTrue(outboxProcessado, "Eventos do outbox devem ser marcados como publicado = true após processamento do scheduler");
+    }
+
+    @Test
+    void deveCancelarUmaUnicaVezERecusarPartidaEncerrada() {
+        String id = createMatch("  Aurora  ", "Estrela");
+        String key = UUID.randomUUID().toString();
+        String reason = "Cancelamento administrativo válido";
+
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", key).contentType(ContentType.JSON)
+                .body("{\"reason\":\"" + reason + "\"}")
+                .when().post("/admin/partidas/{id}/cancel", id)
+                .then().statusCode(202).body("status", equalTo("CANCELED"));
+
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", key).contentType(ContentType.JSON)
+                .body("{\"reason\":\"" + reason + "\"}")
+                .when().post("/admin/partidas/{id}/cancel", id)
+                .then().statusCode(202);
+
+        given().when().get("/partidas/{id}/eventos", id).then()
+                .body("findAll { it.eventType == 'MATCH_CANCELED' }.size()", equalTo(1));
+
+        String finished = createMatch("Norte", "Sul");
+        given().header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/iniciar", finished).then().statusCode(200);
+        given().header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/encerrar", finished).then().statusCode(200);
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(ContentType.JSON)
+                .body("{\"reason\":\"Cancelamento não permitido\"}")
+                .when().post("/admin/partidas/{id}/cancel", finished).then().statusCode(409);
+    }
+
+    @Test
+    void cancelamentosConcorrentesGeramUmUnicoEvento() throws Exception {
+        String id = createMatch("Concorrente A", "Concorrente B");
+        String key = UUID.randomUUID().toString();
+        String token = adminToken();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var cancel = (java.util.concurrent.Callable<Integer>) () -> {
+                start.await();
+                return given().header("Authorization", "Bearer " + token)
+                        .header("Idempotency-Key", key).contentType(ContentType.JSON)
+                        .body("{\"reason\":\"Cancelamento concorrente válido\"}")
+                        .when().post("/admin/partidas/{id}/cancel", id).statusCode();
+            };
+            var first = executor.submit(cancel);
+            var second = executor.submit(cancel);
+            start.countDown();
+            org.junit.jupiter.api.Assertions.assertEquals(202, first.get());
+            org.junit.jupiter.api.Assertions.assertEquals(202, second.get());
+        }
+        given().when().get("/partidas/{id}/eventos", id).then()
+                .body("findAll { it.eventType == 'MATCH_CANCELED' }.size()", equalTo(1));
+    }
+
+    @Test
+    void criacoesConcorrentesComTimesInvertidosNaoDuplicamTimes() throws Exception {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String firstTeam = "Time A " + suffix;
+        String secondTeam = "Time B " + suffix;
+        String token = adminToken();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var createFirst = executor.submit(() -> {
+                start.await();
+                return createMatchWithToken(firstTeam, secondTeam, token);
+            });
+            var createSecond = executor.submit(() -> {
+                start.await();
+                return createMatchWithToken(secondTeam, firstTeam, token);
+            });
+            start.countDown();
+            org.junit.jupiter.api.Assertions.assertEquals(201, createFirst.get());
+            org.junit.jupiter.api.Assertions.assertEquals(201, createSecond.get());
+        }
+        var teams = io.quarkus.arc.Arc.container()
+                .instance(br.com.bolaoboladao.partidas.repository.TeamRepository.class).get();
+        org.junit.jupiter.api.Assertions.assertEquals(2,
+                teams.count("lower(name) = ?1 or lower(name) = ?2",
+                        firstTeam.toLowerCase(), secondTeam.toLowerCase()));
+    }
+
+    private String createMatch(String home, String away) {
+        return given().header("Authorization", "Bearer " + adminToken())
+                .contentType(ContentType.JSON)
+                .body("{\"teamHomeName\":\"" + home + "\",\"teamAwayName\":\"" + away
+                        + "\",\"start\":\"" + OffsetDateTime.now().plusHours(2) + "\"}")
+                .when().post("/admin/partidas").then().statusCode(201).extract().path("id");
+    }
+
+    private int createMatchWithToken(String home, String away, String token) {
+        return given().header("Authorization", "Bearer " + token)
+                .contentType(ContentType.JSON)
+                .body("{\"teamHomeName\":\"" + home + "\",\"teamAwayName\":\"" + away
+                        + "\",\"start\":\"" + OffsetDateTime.now().plusHours(2) + "\"}")
+                .when().post("/admin/partidas").statusCode();
+    }
+
+    private String adminToken() {
+        try {
+            return Jwt.issuer("bolao-user-service").audience("bolao-api").subject(ADMIN_ID)
+                    .groups(Set.of("USER", "ADMIN")).issuedAt(Instant.now())
+                    .expiresAt(Instant.now().plusSeconds(300)).jws().algorithm(SignatureAlgorithm.RS256)
+                    .sign(KeyUtils.readPrivateKey("privateKey.pem", SignatureAlgorithm.RS256));
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 }

@@ -1,26 +1,22 @@
 package br.com.bolaoboladao.gateway.resource;
 
 import br.com.bolaoboladao.gateway.client.BackendClient;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.core.Context;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 
 @Path("/api/partidas")
 @Authenticated
@@ -32,40 +28,24 @@ public class PartidasGatewayResource {
     BackendClient backendClient;
 
     @Inject
-    ObjectMapper objectMapper;
+    JsonWebToken token;
 
     @ConfigProperty(name = "partidas-service.url")
     String partidasServiceUrl;
 
     @GET
-    public Uni<Response> list(@Context UriInfo uriInfo, @Context HttpHeaders headers) {
-        return forwardGet("", uriInfo, headers);
+    public Uni<Response> list(@Context UriInfo uriInfo) {
+        return forwardGet("", uriInfo);
     }
 
     @GET
     @Path("/{path: .*}")
-    public Uni<Response> get(@PathParam("path") String path, @Context UriInfo uriInfo, @Context HttpHeaders headers) {
-        return forwardGet(path, uriInfo, headers);
+    public Uni<Response> get(@PathParam("path") String path, @Context UriInfo uriInfo) {
+        return forwardGet(path, uriInfo);
     }
 
-    @POST
-    public Uni<Response> create(String body, @Context UriInfo uriInfo, @Context HttpHeaders headers) {
-        return forwardPost("", uriInfo, headers, body);
-    }
-
-    @POST
-    @Path("/{path: .*}")
-    public Uni<Response> post(@PathParam("path") String path, String body, @Context UriInfo uriInfo, @Context HttpHeaders headers) {
-        return forwardPost(path, uriInfo, headers, body);
-    }
-
-    private Uni<Response> forwardGet(String path, UriInfo uriInfo, HttpHeaders headers) {
-        return backendClient.get(target(path, uriInfo), authenticatedUserId(headers))
-                .onItem().transform(GatewayResponses::from);
-    }
-
-    private Uni<Response> forwardPost(String path, UriInfo uriInfo, HttpHeaders headers, String body) {
-        return backendClient.post(target(path, uriInfo), authenticatedUserId(headers), body)
+    private Uni<Response> forwardGet(String path, UriInfo uriInfo) {
+        return backendClient.get(target(path, uriInfo), token.getSubject())
                 .onItem().transform(GatewayResponses::from);
     }
 
@@ -81,23 +61,4 @@ public class PartidasGatewayResource {
         return target.toString();
     }
 
-    private String authenticatedUserId(HttpHeaders headers) {
-        String authorization = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new NotAuthorizedException("Bearer");
-        }
-        String token = authorization.substring("Bearer ".length());
-        try {
-            String payload = new String(Base64.getUrlDecoder().decode(token.split("\\.")[1]), StandardCharsets.UTF_8);
-            String subject = objectMapper.readTree(payload).path("sub").asText();
-            if (subject.isBlank()) {
-                throw new NotAuthorizedException("Bearer");
-            }
-            return subject;
-        } catch (NotAuthorizedException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new NotAuthorizedException("Bearer", exception);
-        }
-    }
 }

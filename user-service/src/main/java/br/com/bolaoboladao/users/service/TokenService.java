@@ -30,12 +30,15 @@ public class TokenService {
 
     public String issue(User user) {
         Instant issuedAt = Instant.now();
+        Set<String> roles = user.role == br.com.bolaoboladao.users.domain.UserRole.ADMIN
+                ? Set.of("USER", "ADMIN")
+                : Set.of("USER");
         return Jwt.issuer(issuer)
                 .audience(audience)
                 .subject(user.id.toString())
                 .preferredUserName(user.username)
-                .groups(Set.of("USER"))
-                .claim("roles", Set.of("USER"))
+                .groups(roles)
+                .claim("roles", roles)
                 .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(issuedAt)
                 .expiresAt(issuedAt.plusSeconds(expirationSeconds))

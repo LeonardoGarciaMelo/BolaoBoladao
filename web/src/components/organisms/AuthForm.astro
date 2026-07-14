@@ -68,7 +68,12 @@ const copy = registering
         }
 
         sessionStorage.setItem("bolao.access-token", result.accessToken);
-        window.location.assign("/partidas");
+        const me = await fetch(`${apiBaseUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${result.accessToken}` },
+        });
+        if (!me.ok) throw new Error("Não foi possível validar o perfil da conta.");
+        const user = await me.json() as { roles?: string[] };
+        window.location.assign(user.roles?.includes("ADMIN") ? "/admin" : "/partidas");
       } catch (error) {
         message.textContent = error instanceof Error ? error.message : "Erro inesperado.";
         message.dataset.error = "true";

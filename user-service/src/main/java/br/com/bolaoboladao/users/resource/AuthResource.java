@@ -11,11 +11,17 @@ import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.jwt.JsonWebToken;
+import io.quarkus.security.Authenticated;
+
+import java.util.Set;
+import java.util.UUID;
 
 @Path("/auth")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -27,6 +33,9 @@ public class AuthResource {
 
     @Inject
     TokenService tokenService;
+
+    @Inject
+    JsonWebToken token;
 
     @ConfigProperty(name = "jwt.expiration-seconds")
     long expirationSeconds;
@@ -45,7 +54,21 @@ public class AuthResource {
         return new AuthResponse(tokenService.issue(user), "Bearer", expirationSeconds);
     }
 
+    @GET
+    @Path("/me")
+    @Authenticated
+    public UserResponse me() {
+        User user = User.findById(UUID.fromString(token.getSubject()));
+        if (user == null) {
+            throw new jakarta.ws.rs.NotAuthorizedException("Bearer");
+        }
+        return toResponse(user);
+    }
+
     private UserResponse toResponse(User user) {
-        return new UserResponse(user.id, user.name, user.username);
+        Set<String> roles = user.role == br.com.bolaoboladao.users.domain.UserRole.ADMIN
+                ? Set.of("USER", "ADMIN")
+                : Set.of("USER");
+        return new UserResponse(user.id, user.name, user.username, roles);
     }
 }

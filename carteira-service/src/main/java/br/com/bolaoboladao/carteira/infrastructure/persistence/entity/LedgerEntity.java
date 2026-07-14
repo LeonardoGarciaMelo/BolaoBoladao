@@ -26,4 +26,18 @@ public class LedgerEntity {
     private BigDecimal amount;
 
     private LocalDateTime occurredAt;
+
+    private UUID referenceId;
+
+    private UUID createdBy;
+
+    @Column(length = 500)
+    private String note;
+
+    @Column(unique = true, length = 100)
+    private String idempotencyKey;
+
+    private BigDecimal balanceBefore;
+
+    private BigDecimal balanceAfter;
 }

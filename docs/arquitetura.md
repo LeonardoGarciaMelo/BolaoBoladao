@@ -38,7 +38,8 @@ BCrypt de senha e assina access tokens JWT RS256 com uma chave privada montada
 em segredo. O `api-gateway` recebe somente a chave pública e é a única borda
 HTTP pública dos backends: deixa `POST /api/auth/register` e
 `POST /api/auth/login` públicos e exige JWT válido para `/api/partidas/**` e
-`/api/wallet/**`.
+`/api/wallet/**`. As rotas `/api/admin/**` exigem `ADMIN` no gateway e novamente
+no serviço de destino. `GET /api/auth/me` orienta o redirecionamento do cliente.
 
 Na validação, o gateway confere algoritmo RS256, assinatura, issuer, audience
 e expiração. Ele não encaminha cabeçalhos de identidade do cliente; acrescenta
@@ -59,21 +60,23 @@ Match
 - id : UUID
 - teamHome, teamAway : Team
 - teamHomeScore, teamAwayScore : Integer
-- start, end : LocalDateTime
+- start, end : OffsetDateTime (persistido como TIMESTAMPTZ/UTC)
 - status : SCHEDULED | IN_PROGRESS | FINISHED | CANCELED
 
 MatchEvent (histórico interno, append-only)
 - id : Long
 - match : Match
-- eventType : MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED
+- eventType : MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED | MATCH_CANCELED
 - teamHomeScoreAtEvent, teamAwayScoreAtEvent : Integer
-- occurredAt : LocalDateTime
+- occurredAt : OffsetDateTime
 ```
 
 ### Máquina de estados da partida
 
 ```
 SCHEDULED ──iniciar──▶ IN_PROGRESS ──encerrar──▶ FINISHED
+    │                        │
+    └──cancelar──────────────┴──────────────────▶ CANCELED
                              │
                              └──gol (HOME/AWAY)── (permanece IN_PROGRESS)
 ```
@@ -81,22 +84,23 @@ SCHEDULED ──iniciar──▶ IN_PROGRESS ──encerrar──▶ FINISHED
 Transições inválidas retornam `409 Conflict` (ver `InvalidMatchStateException`
 e `DomainExceptionMapper`).
 
-### Evento de domínio (Kafka) — contrato planejado, ainda não publicado
+### Evento de domínio (Kafka)
 
-O `MatchEvent` interno é a fonte de verdade a partir da qual o serviço vai
-publicar eventos no tópico `match-events` quando o fluxo assíncrono do grupo
-for implementado:
+O `MatchEvent` interno é a fonte de verdade publicada no tópico `match-events`
+pelo transactional outbox:
 
 ```json
 // tópico: match-events
 {
   "match_id": "uuid",
-  "event_type": "MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED",
+  "event_type": "MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED | MATCH_CANCELED",
   "score": {
     "team_home": 0,
     "team_away": 0
   },
-  "occurred_at": "2026-07-10T20:00:00"
+  "occurred_at": "2026-07-10T20:00:00Z",
+  "actor_id": "uuid do administrador ou null",
+  "reason": "justificativa ou null"
 }
 ```
 
@@ -109,11 +113,13 @@ pós-commit).
 O `carteira-service` mantém carteiras, lançamentos e consolidações diárias em
 PostgreSQL, usa Redis para cache de saldo e consome/publica eventos pelo Kafka.
 Sua API REST é acessível externamente apenas por `/api/wallet/**` no gateway.
+`ADMIN_CREDIT` registra créditos manuais auditáveis; `BET_REFUND` compensa um
+débito de palpite e é idempotente por `betId`.
 
-## Domínio: Apostas (planejado)
+## Domínio: Apostas
 
-Ainda não implementado. O modelo de dados e o catálogo de eventos previstos
-permanecem documentados abaixo para referência.
+A versão FastAPI persiste palpites, consome cancelamentos e resultados de
+pagamento, deduplica mensagens e mantém outbox de pedidos de débito/estorno.
 
 ```
 Apostas
@@ -134,7 +140,10 @@ Carteira/Pagamentos
 @daily_balance - id, wallet, balance
 @ledger        - id, wallet, reason (WIN|DEPOSIT|BET|WITHDRAW), operation (CREDIT|DEBIT), amount
 
-%WalletEvent   PAYMENT_ACCEPTED { bet_id } / PAYMENT_REFUSED { bet_id }
+%WalletEvent   PAYMENT_ACCEPTED { bet_id } / PAYMENT_REFUSED { bet_id } / PAYMENT_REFUNDED { bet_id }
 %PaymentEvent  WITHDRAW { wallet_id, amount } / DEPOSIT { wallet_id, amount }
 
 ```
+
+O fluxo completo de cancelamento está no [ADR-004](adr/ADR-004-saga-cancelamento-estorno.md).
+Os limites de contexto estão registrados em [`CONTEXT-MAP.md`](../CONTEXT-MAP.md).

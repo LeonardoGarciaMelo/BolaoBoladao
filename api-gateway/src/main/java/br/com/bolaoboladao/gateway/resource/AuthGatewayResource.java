@@ -5,6 +5,11 @@ import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.GET;
+import io.quarkus.security.Authenticated;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
@@ -22,6 +27,9 @@ public class AuthGatewayResource {
     @ConfigProperty(name = "user-service.url")
     String userServiceUrl;
 
+    @Inject
+    JsonWebToken token;
+
     @POST
     @Path("/register")
     public Uni<Response> register(String body) {
@@ -32,6 +40,18 @@ public class AuthGatewayResource {
     @Path("/login")
     public Uni<Response> login(String body) {
         return forward("/auth/login", body);
+    }
+
+    @GET
+    @Path("/me")
+    @Authenticated
+    public Uni<Response> me(@Context HttpHeaders headers) {
+        return backendClient.adminGet(userServiceUrl + "/auth/me", token.getSubject(), authorization(headers))
+                .onItem().transform(GatewayResponses::from);
+    }
+
+    private String authorization(HttpHeaders headers) {
+        return headers.getHeaderString(HttpHeaders.AUTHORIZATION);
     }
 
     private Uni<Response> forward(String path, String body) {

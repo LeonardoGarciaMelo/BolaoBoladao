@@ -10,8 +10,17 @@ public record Ledger(
         Reason reason,
         Operation operation,
         BigDecimal amount,
-        LocalDateTime occurredAt
+        LocalDateTime occurredAt,
+        UUID referenceId,
+        UUID createdBy,
+        String note,
+        String idempotencyKey,
+        BigDecimal balanceBefore,
+        BigDecimal balanceAfter
 ) {
+    public Ledger(UUID id, UUID walletId, Reason reason, Operation operation, BigDecimal amount, LocalDateTime occurredAt) {
+        this(id, walletId, reason, operation, amount, occurredAt, null, null, null, null, null, null);
+    }
     public boolean isCredit() {
         return operation == Operation.CREDIT;
     }
@@ -24,7 +33,7 @@ public record Ledger(
         return isCredit() ? balance.add(amount) : balance.subtract(amount);
     }
 
-    public enum Reason {WIN, DEPOSIT, BET, WITHDRAW}
+    public enum Reason {WIN, DEPOSIT, BET, WITHDRAW, ADMIN_CREDIT, BET_REFUND}
 
     public enum Operation {CREDIT, DEBIT}
 }

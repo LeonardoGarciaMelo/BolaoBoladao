@@ -14,6 +14,8 @@ public interface WalletRepository {
 
     Uni<Wallet> findAndLockByUserId(UUID userId);
 
+    Uni<Void> lockUser(UUID userId);
+
     Uni<List<Wallet>> findWalletsPaged(int page, int size);
 
     Uni<Long> countWallets();

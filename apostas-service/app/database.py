@@ -1,6 +1,6 @@
 from typing import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -12,6 +12,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE bets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"))
+        connection.execute(text("UPDATE bets SET updated_at = created_at WHERE updated_at IS NULL"))
+        connection.execute(text("ALTER TABLE bets ALTER COLUMN updated_at SET NOT NULL"))
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -5,8 +5,10 @@ package br.com.bolaoboladao.partidas.domain;
  * TEAM_HOME_SCORED, TEAM_AWAY_SCORED, MATCH_STARTED, MATCH_ENDED.
  */
 public enum MatchEventType {
+    MATCH_CREATED,
     MATCH_STARTED,
     TEAM_HOME_SCORED,
     TEAM_AWAY_SCORED,
-    MATCH_ENDED
+    MATCH_ENDED,
+    MATCH_CANCELED
 }

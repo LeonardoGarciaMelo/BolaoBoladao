@@ -2,7 +2,7 @@ package br.com.bolaoboladao.partidas.dto;
 
 import br.com.bolaoboladao.partidas.domain.MatchEventType;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record MatchEventResponse(
@@ -10,6 +10,8 @@ public record MatchEventResponse(
         MatchEventType eventType,
         Integer teamHomeScoreAtEvent,
         Integer teamAwayScoreAtEvent,
-        LocalDateTime occurredAt
+        OffsetDateTime occurredAt,
+        java.util.UUID actorId,
+        String reason
 ) {
 }

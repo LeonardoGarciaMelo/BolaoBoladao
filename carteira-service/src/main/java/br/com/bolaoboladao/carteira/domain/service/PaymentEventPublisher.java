@@ -8,4 +8,8 @@ public interface PaymentEventPublisher {
     Uni<Void> publishPaymentAccepted(UUID betId);
 
     Uni<Void> publishPaymentRefused(UUID betId);
+
+    Uni<Void> publishPaymentRefunded(UUID betId);
+
+    Uni<Void> publishPaymentRefundFailed(UUID betId);
 }

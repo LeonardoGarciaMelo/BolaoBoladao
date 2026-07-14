@@ -1,0 +1,138 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import AdminShell from "../../components/templates/AdminShell.astro";
+---
+<Layout title="Partidas | Admin Bolão Boladão">
+  <AdminShell active="matches" eyebrow="GESTÃO ESPORTIVA" title="Partidas">
+    <div class="admin-split">
+      <section class="admin-card admin-create-match">
+        <header class="admin-card__header"><div><p>NOVA DISPUTA</p><h2>Criar partida</h2></div></header>
+        <form data-match-form class="admin-form">
+          <label>MANDANTE<input name="teamHomeName" list="team-options" required minlength="2" autocomplete="off" /></label>
+          <label>VISITANTE<input name="teamAwayName" list="team-options" required minlength="2" autocomplete="off" /></label>
+          <datalist id="team-options"></datalist>
+          <label>DATA E HORA LOCAL<input name="start" type="datetime-local" required /></label>
+          <p class="admin-form__hint" data-timezone></p>
+          <p class="admin-form__message" data-match-message role="alert"></p>
+          <button class="admin-action" type="submit">CRIAR PARTIDA</button>
+        </form>
+      </section>
+      <section class="admin-card admin-match-list-card">
+        <header class="admin-card__header"><div><p>AGENDA</p><h2>Partidas cadastradas</h2></div><select data-status-filter aria-label="Filtrar por status"><option value="">TODAS</option><option>SCHEDULED</option><option>IN_PROGRESS</option><option>FINISHED</option><option>CANCELED</option></select></header>
+        <div class="admin-match-list" data-match-list><p class="admin-empty">Carregando partidas…</p></div>
+      </section>
+    </div>
+    <dialog class="admin-dialog" data-cancel-dialog>
+      <form method="dialog" data-cancel-form>
+        <span class="admin-dialog__eyebrow">AÇÃO IRREVERSÍVEL</span><h2>Cancelar partida?</h2>
+        <p data-cancel-match-label></p>
+        <label>MOTIVO DO CANCELAMENTO<textarea name="reason" minlength="10" maxlength="500" required></textarea></label>
+        <p class="admin-form__message" data-cancel-message role="alert"></p>
+        <div><button value="close" class="admin-secondary">VOLTAR</button><button value="confirm" class="admin-danger">CANCELAR PARTIDA</button></div>
+      </form>
+    </dialog>
+  </AdminShell>
+</Layout>
+
+<script>
+  import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
+  type Match = { id: string; teamHome: string; teamAway: string; start: string; status: string; cancelReason?: string };
+  const list = document.querySelector<HTMLElement>("[data-match-list]");
+  const form = document.querySelector<HTMLFormElement>("[data-match-form]");
+  const message = document.querySelector<HTMLElement>("[data-match-message]");
+  const filter = document.querySelector<HTMLSelectElement>("[data-status-filter]");
+  const dialog = document.querySelector<HTMLDialogElement>("[data-cancel-dialog]");
+  const cancelForm = document.querySelector<HTMLFormElement>("[data-cancel-form]");
+  let selectedMatch: Match | undefined;
+  const formatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  document.querySelector<HTMLElement>("[data-timezone]")!.textContent = `Fuso exibido: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+
+  const loadTeams = async (query: string) => {
+    const response = await authenticatedFetch(`/admin/teams?q=${encodeURIComponent(query)}&limit=12`);
+    if (!response.ok) return;
+    const options = document.querySelector<HTMLDataListElement>("#team-options");
+    options?.replaceChildren(...(await response.json()).map((team: { name: string }) => {
+      const option = document.createElement("option"); option.value = team.name; return option;
+    }));
+  };
+
+  const loadMatches = async () => {
+    await requireAdmin();
+    const status = filter?.value ? `&status=${filter.value}` : "";
+    const response = await authenticatedFetch(`/admin/partidas?page=0&size=50${status}`);
+    const page = await response.json();
+    if (!list) return;
+    list.replaceChildren();
+    if (!page.items?.length) { const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhuma partida nesta seleção."; list.append(empty); return; }
+    for (const match of page.items as Match[]) list.append(renderMatch(match));
+  };
+
+  const renderMatch = (match: Match) => {
+    const row = document.createElement("article"); row.className = "admin-match-row";
+    const status = document.createElement("span"); status.className = `admin-status admin-status--${match.status.toLowerCase()}`; status.textContent = match.status;
+    const copy = document.createElement("div");
+    const teams = document.createElement("strong"); teams.textContent = `${match.teamHome} × ${match.teamAway}`;
+    const date = document.createElement("time"); date.textContent = formatter.format(new Date(match.start));
+    copy.append(teams, date); row.append(status, copy);
+    if (["SCHEDULED", "IN_PROGRESS"].includes(match.status)) {
+      const button = document.createElement("button"); button.className = "admin-cancel-trigger"; button.textContent = "CANCELAR";
+      button.addEventListener("click", () => { selectedMatch = match; document.querySelector<HTMLElement>("[data-cancel-match-label]")!.textContent = `${match.teamHome} × ${match.teamAway}`; dialog?.showModal(); });
+      row.append(button);
+    } else if (match.status === "CANCELED") {
+      const audit = document.createElement("div"); audit.className = "admin-match-refund";
+      const reason = document.createElement("small"); reason.textContent = match.cancelReason || "Cancelada";
+      const progress = document.createElement("span"); progress.textContent = "ESTORNOS: CONSULTANDO";
+      const retry = document.createElement("button"); retry.className = "admin-cancel-trigger"; retry.textContent = "REPROCESSAR ESTORNOS"; retry.hidden = true;
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        const response = await authenticatedFetch(`/admin/partidas/${match.id}/refunds/retry`, { method: "POST" });
+        retry.disabled = false;
+        if (response.ok) { retry.hidden = true; progress.textContent = "ESTORNOS: REPROCESSANDO"; void pollRefunds(match.id, progress, retry); }
+      });
+      audit.append(reason, progress, retry); row.append(audit); void pollRefunds(match.id, progress, retry);
+    }
+    return row;
+  };
+
+  const pollRefunds = async (matchId: string, target: HTMLElement, retry?: HTMLButtonElement) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await authenticatedFetch(`/admin/partidas/${matchId}/refunds`);
+      if (response.ok) {
+        const progress = await response.json();
+        target.textContent = `ESTORNOS: ${progress.status} · ${progress.completed}/${progress.total}`;
+        target.dataset.status = String(progress.status).toLowerCase();
+        if (progress.status === "FAILED") { if (retry) retry.hidden = false; return; }
+        if (progress.status === "COMPLETED") return;
+      } else if (response.status !== 404) return;
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    }
+    target.textContent = "ESTORNOS: PROCESSANDO";
+  };
+
+  form?.querySelectorAll<HTMLInputElement>("input[list]").forEach((input) => input.addEventListener("input", () => {
+    if (input.value.trim().length >= 2) void loadTeams(input.value.trim());
+  }));
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault(); if (!form.reportValidity() || !message) return;
+    const data = new FormData(form); const localStart = new Date(String(data.get("start")));
+    if (Number.isNaN(localStart.valueOf()) || localStart <= new Date()) { message.textContent = "Escolha um horário futuro válido."; return; }
+    const response = await authenticatedFetch("/admin/partidas", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ teamHomeName: data.get("teamHomeName"), teamAwayName: data.get("teamAwayName"), start: localStart.toISOString() }) });
+    const result = await response.json().catch(() => ({}));
+    message.textContent = response.ok ? "Partida criada e adicionada à agenda." : result.message || "Não foi possível criar a partida.";
+    if (response.ok) { form.reset(); await loadMatches(); }
+  });
+  cancelForm?.addEventListener("submit", async (event) => {
+    const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
+    if (submitter?.value !== "confirm") return;
+    event.preventDefault(); if (!selectedMatch || !cancelForm.reportValidity()) return;
+    const reason = String(new FormData(cancelForm).get("reason"));
+    const response = await authenticatedFetch(`/admin/partidas/${selectedMatch.id}/cancel`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ reason }) });
+    const result = await response.json().catch(() => ({}));
+    const cancelMessage = document.querySelector<HTMLElement>("[data-cancel-message]");
+    if (!response.ok) { if (cancelMessage) cancelMessage.textContent = result.message || "Não foi possível cancelar."; return; }
+    dialog?.close(); cancelForm.reset(); selectedMatch = undefined; await loadMatches();
+  });
+  filter?.addEventListener("change", () => void loadMatches());
+  if (document.querySelector("[data-admin-shell]:not([hidden])")) void loadMatches();
+  else window.addEventListener("admin:ready", () => void loadMatches(), { once: true });
+</script>

@@ -6,9 +6,9 @@ import br.com.bolaoboladao.carteira.application.ProcessBetPaymentUseCase;
 import br.com.bolaoboladao.carteira.presentation.messaging.dto.BetEvent;
 import br.com.bolaoboladao.carteira.presentation.messaging.dto.UserEvent;
 import br.com.bolaoboladao.carteira.presentation.messaging.exception.InvalidEventException;
+import br.com.bolaoboladao.carteira.domain.service.PaymentEventPublisher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -16,6 +16,8 @@ import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.jboss.logging.Logger;
+
+import java.time.Duration;
 
 @ApplicationScoped
 public class KafkaEventConsumer {
@@ -26,20 +28,22 @@ public class KafkaEventConsumer {
     private final CreateWalletUseCase createWalletUseCase;
     private final ProcessBetPaymentUseCase processBetPaymentUseCase;
     private final ObjectMapper objectMapper;
+    private final PaymentEventPublisher paymentEventPublisher;
 
     @Inject
     public KafkaEventConsumer(IdempotentEventUseCase idempotentEventUseCase,
                               CreateWalletUseCase createWalletUseCase,
                               ProcessBetPaymentUseCase processBetPaymentUseCase,
+                              PaymentEventPublisher paymentEventPublisher,
                               ObjectMapper objectMapper) {
         this.idempotentEventUseCase = idempotentEventUseCase;
         this.createWalletUseCase = createWalletUseCase;
         this.processBetPaymentUseCase = processBetPaymentUseCase;
+        this.paymentEventPublisher = paymentEventPublisher;
         this.objectMapper = objectMapper;
     }
 
     @Incoming("user-events")
-    @WithTransaction
     @Retry(delay = 2000, abortOn = InvalidEventException.class)
     @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> consumeUserEvent(String message) {
@@ -56,12 +60,14 @@ public class KafkaEventConsumer {
     }
 
     @Incoming("bet-events")
-    @WithTransaction
-    @Retry(delay = 2000, abortOn = InvalidEventException.class)
     @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> consumeBetEvent(String message) {
         var event = parseEvent(message, BetEvent.class);
-        return idempotentEventUseCase.execute(event.eventId(), event.eventType(), () -> handleBetEvent(event));
+        return idempotentEventUseCase.execute(event.eventId(), event.eventType(), () -> handleBetEvent(event))
+                .onFailure().retry().withBackOff(Duration.ofSeconds(2)).atMost(3)
+                .onFailure().call(() -> "BET_REFUND_REQUESTED".equals(event.eventType())
+                        ? paymentEventPublisher.publishPaymentRefundFailed(event.betId())
+                        : Uni.createFrom().voidItem());
     }
 
     private Uni<Void> handleBetEvent(BetEvent event) {
@@ -70,6 +76,8 @@ public class KafkaEventConsumer {
                     processBetPaymentUseCase.executeBetCreated(event.betId(), event.userId(), event.amount());
             case "BET_SETTLED" ->
                     processBetPaymentUseCase.executeBetSettled(event.betId(), event.userId(), event.amount());
+            case "BET_REFUND_REQUESTED" ->
+                    processBetPaymentUseCase.executeBetRefundRequested(event.betId(), event.userId(), event.amount());
             default -> {
                 LOG.warnf("Unknown bet event type: %s", event.eventType());
                 yield Uni.createFrom().voidItem();

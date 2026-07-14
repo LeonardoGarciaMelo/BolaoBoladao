@@ -1,0 +1,61 @@
+---
+import BrandLogo from "../molecules/BrandLogo.astro";
+import Icon from "../atoms/Icon.astro";
+
+interface Props { active: "overview" | "matches" | "wallets"; title: string; eyebrow: string; }
+const { active, title, eyebrow } = Astro.props;
+const links = [
+  { key: "overview", href: "/admin", label: "Visão geral", icon: "ball" },
+  { key: "matches", href: "/admin/partidas", label: "Partidas", icon: "trophy" },
+  { key: "wallets", href: "/admin/carteiras", label: "Carteiras", icon: "target" },
+] as const;
+---
+
+<div class="admin-route-loading route-loading" data-admin-loading><span></span><p>Validando acesso administrativo…</p></div>
+<div class="admin-shell" data-admin-shell hidden>
+  <aside class="admin-sidebar">
+    <BrandLogo href="/" label="Página inicial do Bolão Boladão" />
+    <p class="admin-sidebar__badge">CENTRAL ADMIN</p>
+    <nav aria-label="Navegação administrativa">
+      {links.map((link) => (
+        <a href={link.href} aria-current={active === link.key ? "page" : undefined}>
+          <Icon name={link.icon} size={20} /> <span>{link.label}</span>
+        </a>
+      ))}
+    </nav>
+    <a class="admin-sidebar__back" href="/partidas">Ver área do bolão</a>
+  </aside>
+  <div class="admin-workspace">
+    <header class="admin-topbar">
+      <div><p>{eyebrow}</p><h1>{title}</h1></div>
+      <div class="admin-identity"><span data-admin-name>Administrador</span><button type="button" data-admin-logout>SAIR</button></div>
+    </header>
+    <main class="admin-content"><slot /></main>
+  </div>
+</div>
+<div class="admin-access-denied" data-admin-denied hidden>
+  <strong>ACESSO RESTRITO</strong><p>Esta conta não possui permissão administrativa.</p><a href="/partidas">Voltar para partidas</a>
+</div>
+
+<script>
+  import { clearAccessToken, requireAdmin } from "../../scripts/session";
+  const loading = document.querySelector<HTMLElement>("[data-admin-loading]");
+  const shell = document.querySelector<HTMLElement>("[data-admin-shell]");
+  const denied = document.querySelector<HTMLElement>("[data-admin-denied]");
+  try {
+    const user = await requireAdmin();
+    document.querySelector<HTMLElement>("[data-admin-name]")!.textContent = user.name;
+    if (loading) loading.hidden = true;
+    if (shell) shell.hidden = false;
+    window.dispatchEvent(new CustomEvent("admin:ready", { detail: user }));
+  } catch (error) {
+    if ((error as { status?: number }).status === 403) {
+      if (loading) loading.hidden = true;
+      if (denied) denied.hidden = false;
+    }
+  }
+  document.querySelector("[data-admin-logout]")?.addEventListener("click", () => {
+    clearAccessToken();
+    window.location.assign("/login");
+  });
+</script>

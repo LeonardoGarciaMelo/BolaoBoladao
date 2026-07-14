@@ -46,7 +46,7 @@ class PartidasGatewaySecurityTest {
 
     @Test
     void deveAceitarTokenAssinadoComIssuerEAudienciaEsperados() throws Exception {
-        String token = token("bolao-user-service", "bolao-api", Instant.now().plusSeconds(300));
+        String token = token("bolao-user-service", "bolao-api", Instant.now().plusSeconds(300), Set.of("USER"));
 
         given()
                 .header("Authorization", "Bearer " + token)
@@ -59,19 +59,33 @@ class PartidasGatewaySecurityTest {
 
     @Test
     void deveRecusarTokenExpiradoComIssuerOuAudienciaIncorretos() throws Exception {
-        given().header("Authorization", "Bearer " + token("bolao-user-service", "bolao-api", Instant.now().minusSeconds(1)))
+        given().header("Authorization", "Bearer " + token("bolao-user-service", "bolao-api", Instant.now().minusSeconds(1), Set.of("USER")))
                 .when().get("/api/partidas").then().statusCode(401);
-        given().header("Authorization", "Bearer " + token("issuer-errado", "bolao-api", Instant.now().plusSeconds(300)))
+        given().header("Authorization", "Bearer " + token("issuer-errado", "bolao-api", Instant.now().plusSeconds(300), Set.of("USER")))
                 .when().get("/api/partidas").then().statusCode(401);
-        given().header("Authorization", "Bearer " + token("bolao-user-service", "audiencia-errada", Instant.now().plusSeconds(300)))
+        given().header("Authorization", "Bearer " + token("bolao-user-service", "audiencia-errada", Instant.now().plusSeconds(300), Set.of("USER")))
                 .when().get("/api/partidas").then().statusCode(401);
     }
 
-    private String token(String issuer, String audience, Instant expiresAt) throws Exception {
+    @Test
+    void deveReservarMutacoesParaRotasAdministrativas() throws Exception {
+        String userToken = token("bolao-user-service", "bolao-api", Instant.now().plusSeconds(300), Set.of("USER"));
+        String adminToken = token("bolao-user-service", "bolao-api", Instant.now().plusSeconds(300), Set.of("USER", "ADMIN"));
+
+        given().header("Authorization", "Bearer " + userToken)
+                .when().get("/api/admin/partidas").then().statusCode(403);
+        given().header("Authorization", "Bearer " + adminToken)
+                .when().get("/api/admin/partidas").then().statusCode(200);
+        given().header("Authorization", "Bearer " + userToken)
+                .contentType("application/json").body("{}")
+                .when().post("/api/partidas").then().statusCode(405);
+    }
+
+    private String token(String issuer, String audience, Instant expiresAt, Set<String> groups) throws Exception {
         return Jwt.issuer(issuer)
                 .audience(audience)
                 .subject("22121193-3c26-4c26-812d-123456789012")
-                .groups(Set.of("USER"))
+                .groups(groups)
                 .issuedAt(Instant.now())
                 .expiresAt(expiresAt)
                 .jws().algorithm(SignatureAlgorithm.RS256)

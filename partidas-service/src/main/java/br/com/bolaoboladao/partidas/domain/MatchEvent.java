@@ -10,7 +10,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 /**
  * Registro histórico (append-only) dos eventos ocorridos em uma partida.
@@ -39,7 +40,13 @@ public class MatchEvent extends PanacheEntity {
 
     @NotNull
     @Column(name = "occurred_at", nullable = false)
-    public LocalDateTime occurredAt;
+    public OffsetDateTime occurredAt;
+
+    @Column(name = "actor_id")
+    public UUID actorId;
+
+    @Column(name = "reason", length = 500)
+    public String reason;
 
     @NotNull
     @Column(name = "published", nullable = false)
@@ -51,7 +58,7 @@ public class MatchEvent extends PanacheEntity {
     @jakarta.persistence.PrePersist
     void onCreate() {
         if (this.occurredAt == null) {
-            this.occurredAt = LocalDateTime.now();
+            this.occurredAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
         }
     }
 }

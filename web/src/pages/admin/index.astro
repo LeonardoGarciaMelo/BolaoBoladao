@@ -1,0 +1,105 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import AdminShell from "../../components/templates/AdminShell.astro";
+---
+<Layout title="Admin | Bolão Boladão">
+  <AdminShell active="overview" eyebrow="OPERAÇÃO DO BOLÃO" title="Visão geral">
+    <section class="admin-metrics" aria-label="Indicadores">
+      <article><span>PARTIDAS</span><strong data-metric-matches>—</strong><small>cadastradas</small></article>
+      <article><span>CANCELADAS</span><strong data-metric-canceled>—</strong><small>no histórico</small></article>
+      <article><span>ESTORNOS PENDENTES</span><strong data-metric-refunds>—</strong><small data-refunds-label>partidas em processamento</small></article>
+      <article><span>ATIVIDADE</span><strong data-metric-activity>—</strong><small>ações auditáveis</small></article>
+    </section>
+    <section class="admin-card">
+      <header class="admin-card__header"><div><p>RASTRO OPERACIONAL</p><h2>Atividade recente</h2></div><button class="admin-refresh" data-refresh>ATUALIZAR</button></header>
+      <div class="admin-activity" data-activity><p class="admin-empty">Carregando atividade…</p></div>
+      <footer class="admin-card__footer"><button class="admin-refresh" data-load-more hidden>CARREGAR MAIS</button></footer>
+    </section>
+  </AdminShell>
+</Layout>
+
+<script>
+  import { authenticatedFetch, requireAdmin } from "../../scripts/session";
+  const activity = document.querySelector<HTMLElement>("[data-activity]");
+  const loadMore = document.querySelector<HTMLButtonElement>("[data-load-more]");
+  const format = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  let nextCursor: string | null = null;
+
+  const renderActivity = (events: any[], append = false) => {
+    if (!activity) return;
+    if (!append) activity.replaceChildren();
+    if (!events.length && !append) {
+      const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhuma ação administrativa registrada."; activity.append(empty); return;
+    }
+    for (const event of events) {
+      const row = document.createElement("article");
+      const copy = document.createElement("div");
+      const label = document.createElement("strong");
+      label.textContent = ({ MATCH_CREATED: "Partida criada", MATCH_CANCELED: "Partida cancelada", ADMIN_CREDIT: "Crédito administrativo" } as Record<string, string>)[event.type] ?? event.type;
+      const detail = document.createElement("span"); detail.textContent = event.reason || `Recurso ${event.resourceId}`;
+      const time = document.createElement("time"); time.textContent = format.format(new Date(event.occurredAt));
+      copy.append(label, detail); row.append(copy, time); activity.append(row);
+    }
+  };
+
+  const fetchActivity = async (append = false) => {
+    const cursor = append && nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : "";
+    const response = await authenticatedFetch(`/admin/activity?size=20${cursor}`);
+    if (!response.ok) throw new Error("Não foi possível carregar a atividade administrativa");
+    const feed = await response.json();
+    renderActivity(feed.items ?? [], append);
+    nextCursor = feed.nextCursor ?? null;
+    if (loadMore) loadMore.hidden = !nextCursor;
+    document.querySelector<HTMLElement>("[data-metric-activity]")!.textContent = String(feed.total ?? 0);
+  };
+
+  const countPendingRefunds = async () => {
+    const canceledMatches: Array<{ id: string }> = [];
+    let page = 0;
+    let total = 0;
+    do {
+      const response = await authenticatedFetch(`/admin/partidas?status=CANCELED&page=${page}&size=50`);
+      if (!response.ok) return { pending: 0, unavailable: 1 };
+      const result = await response.json();
+      canceledMatches.push(...(result.items ?? []));
+      total = Number(result.total ?? 0);
+      page += 1;
+    } while (canceledMatches.length < total);
+    const progress = await Promise.all(canceledMatches.map(async (match): Promise<boolean | null> => {
+      const response = await authenticatedFetch(`/admin/partidas/${match.id}/refunds`);
+      if (response.status === 404) return true;
+      if (!response.ok) return null;
+      const result = await response.json();
+      return ["PENDING", "PROCESSING"].includes(result.status);
+    }));
+    return {
+      pending: progress.filter((value) => value === true).length,
+      unavailable: progress.filter((value) => value === null).length,
+    };
+  };
+
+  const load = async () => {
+    await requireAdmin();
+    const [matchesResponse, canceledResponse, pendingRefunds] = await Promise.all([
+      authenticatedFetch("/admin/partidas?size=1"),
+      authenticatedFetch("/admin/partidas?status=CANCELED&size=1"),
+      countPendingRefunds(),
+    ]);
+    const matches = await matchesResponse.json();
+    const canceled = await canceledResponse.json();
+    document.querySelector<HTMLElement>("[data-metric-matches]")!.textContent = String(matches.total ?? 0);
+    document.querySelector<HTMLElement>("[data-metric-canceled]")!.textContent = String(canceled.total ?? 0);
+    const refundMetric = document.querySelector<HTMLElement>("[data-metric-refunds]")!;
+    refundMetric.textContent = pendingRefunds.unavailable ? `${pendingRefunds.pending}+` : String(pendingRefunds.pending);
+    const refundLabel = document.querySelector<HTMLElement>("[data-refunds-label]")!;
+    refundLabel.textContent = pendingRefunds.unavailable
+      ? `${pendingRefunds.unavailable} consulta(s) indisponível(is)`
+      : "partidas em processamento";
+    nextCursor = null;
+    await fetchActivity();
+  };
+  if (document.querySelector("[data-admin-shell]:not([hidden])")) void load();
+  else window.addEventListener("admin:ready", () => void load(), { once: true });
+  document.querySelector("[data-refresh]")?.addEventListener("click", () => void load());
+  loadMore?.addEventListener("click", () => void fetchActivity(true));
+</script>

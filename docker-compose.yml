@@ -23,8 +23,8 @@ services:
   partidas-cache:
     image: redis:7-alpine
     container_name: bolao-partidas-cache
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,9 +34,9 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: bolao-kafka
-    ports:
-      - "9092:9092"
-      - "29092:29092"
+    expose:
+      - "9092"
+      - "29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
@@ -69,8 +69,13 @@ services:
       PARTIDAS_DB_PASSWORD: bolao
       REDIS_HOSTS: redis://partidas-cache:6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
     expose:
       - "8081"
+    volumes:
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
     depends_on:
       partidas-db:
         condition: service_healthy
@@ -86,8 +91,8 @@ services:
       POSTGRES_DB: carteira_db
       POSTGRES_USER: bolao
       POSTGRES_PASSWORD: bolao
-    ports:
-      - "5434:5432"
+    expose:
+      - "5432"
     volumes:
       - carteira_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -99,8 +104,8 @@ services:
   carteira-cache:
     image: redis:7-alpine
     container_name: bolao-carteira-cache
-    ports:
-      - "6380:6379"
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -118,8 +123,14 @@ services:
       QUARKUS_DATASOURCE_PASSWORD: bolao
       QUARKUS_REDIS_HOSTS: redis://carteira-cache:6379
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
+      ADMIN_CREDIT_MAX_CENTS: 1000000
     expose:
       - "8080"
+    volumes:
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
     depends_on:
       carteira-db:
         condition: service_healthy
@@ -135,8 +146,8 @@ services:
       POSTGRES_DB: apostas_db
       POSTGRES_USER: bolao
       POSTGRES_PASSWORD: bolao
-    ports:
-      - "5435:5432"
+    expose:
+      - "5432"
     volumes:
       - apostas_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -154,8 +165,15 @@ services:
       DATABASE_URL: postgresql+psycopg://bolao:bolao@apostas-db:5432/apostas_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_BET_TOPIC: bet-events
+      KAFKA_MATCH_TOPIC: match-events
+      KAFKA_WALLET_TOPIC: wallet-events
+      JWT_PUBLIC_KEY_LOCATION: /run/secrets/jwt-public.pem
+      JWT_ISSUER: bolao-user-service
+      JWT_AUDIENCE: bolao-api
     expose:
       - "8000"
+    volumes:
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
     depends_on:
       apostas-db:
         condition: service_healthy
@@ -169,8 +187,8 @@ services:
       POSTGRES_DB: user_db
       POSTGRES_USER: bolao
       POSTGRES_PASSWORD: bolao
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
     volumes:
       - user_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -192,10 +210,16 @@ services:
       JWT_AUDIENCE: bolao-api
       JWT_EXPIRATION_SECONDS: 3600
       JWT_PRIVATE_KEY_LOCATION: file:/run/secrets/jwt-private.pem
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/jwt-public.pem
+      ADMIN_BOOTSTRAP_NAME: Administrador
+      ADMIN_BOOTSTRAP_USERNAME: admin
+      ADMIN_BOOTSTRAP_PASSWORD_FILE: /run/secrets/admin-password
     expose:
       - "8082"
     volumes:
       - ./.secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
+      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - ./.secrets/admin-password:/run/secrets/admin-password:ro
     depends_on:
       user-db:
         condition: service_healthy
@@ -242,8 +266,106 @@ services:
       api-gateway:
         condition: service_started
 
+  partidas-test-db:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: partidas_test_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d partidas_test_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  user-test-db:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_test_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d user_test_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  partidas-test-cache:
+    profiles: ["test"]
+    image: redis:7-alpine
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  backend-tests:
+    profiles: ["test"]
+    image: maven:3.9-eclipse-temurin-21
+    working_dir: /workspace
+    command: ["mvn", "-B", "test"]
+    environment:
+      QUARKUS_DATASOURCE_DEVSERVICES_ENABLED: "false"
+      QUARKUS_KAFKA_DEVSERVICES_ENABLED: "false"
+      PARTIDAS_TEST_DB_URL: jdbc:postgresql://partidas-test-db:5432/partidas_test_db
+      USER_TEST_DB_URL: jdbc:postgresql://user-test-db:5432/user_test_db
+      PARTIDAS_DB_USER: bolao
+      PARTIDAS_DB_PASSWORD: bolao
+      USER_DB_USER: bolao
+      USER_DB_PASSWORD: bolao
+      QUARKUS_REDIS_HOSTS: redis://partidas-test-cache:6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - ./:/workspace
+      - maven_test_cache:/root/.m2
+    depends_on:
+      partidas-test-db:
+        condition: service_healthy
+      partidas-test-cache:
+        condition: service_healthy
+      user-test-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  apostas-tests:
+    profiles: ["test"]
+    build:
+      context: ./apostas-service
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]
+    volumes:
+      - ./apostas-service/tests:/app/tests:ro
+
+  web-e2e:
+    profiles: ["test"]
+    image: mcr.microsoft.com/playwright:v1.61.1-noble
+    working_dir: /workspace/web
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm test:e2e:gateway"]
+    environment:
+      CI: "true"
+      PLAYWRIGHT_BASE_URL: http://api-gateway:8080
+    volumes:
+      - ./:/workspace
+      - pnpm_test_store:/root/.local/share/pnpm/store
+    depends_on:
+      api-gateway:
+        condition: service_started
+
 volumes:
   partidas_db_data:
   carteira_db_data:
   apostas_db_data:
   user_db_data:
+  maven_test_cache:
+  pnpm_test_store:

@@ -7,90 +7,51 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.repository.Panach
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
-import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
-import org.eclipse.microprofile.faulttolerance.Fallback;
-import org.eclipse.microprofile.faulttolerance.Retry;
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.jboss.logging.Logger;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @ApplicationScoped
 public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
-
-    private static final Logger LOG = Logger.getLogger(KafkaPaymentEventPublisher.class);
     private static final String TOPIC = "wallet-events";
 
-    @Inject
-    @Channel(TOPIC)
-    MutinyEmitter<String> walletEventEmitter;
-
-    @Inject
-    ObjectMapper objectMapper;
-
-    @Inject
-    PanacheOutboxEventRepository outboxRepository;
+    @Inject ObjectMapper objectMapper;
+    @Inject PanacheOutboxEventRepository outboxRepository;
 
     @Override
     @WithTransaction
-    @Fallback(fallbackMethod = "fallbackPublishPaymentAccepted")
-    @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> publishPaymentAccepted(UUID betId) {
-        try {
-            String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_ACCEPTED", betId));
-            return walletEventEmitter.send(payload);
-        } catch (JsonProcessingException e) {
-            return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
-        }
-    }
-
-    public Uni<Void> fallbackPublishPaymentAccepted(UUID betId) {
-        LOG.warnf("Kafka indisponível, gravando evento PAYMENT_ACCEPTED no outbox para a bet %s", betId);
-        try {
-            String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_ACCEPTED", betId));
-            return saveToOutbox(TOPIC, payload);
-        } catch (JsonProcessingException e) {
-            return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
-        }
+        return save("PAYMENT_ACCEPTED", betId);
     }
 
     @Override
     @WithTransaction
-    @Fallback(fallbackMethod = "fallbackPublishPaymentRefused")
-    @Retry(maxRetries = 2, delay = 200)
-    @CircuitBreaker(requestVolumeThreshold = 4, delay = 5000)
     public Uni<Void> publishPaymentRefused(UUID betId) {
-        try {
-            String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_REFUSED", betId));
-            return walletEventEmitter.send(payload);
-        } catch (JsonProcessingException e) {
-            return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
-        }
+        return save("PAYMENT_REFUSED", betId);
     }
 
-    public Uni<Void> fallbackPublishPaymentRefused(UUID betId) {
-        LOG.warnf("Kafka indisponível, gravando evento PAYMENT_REFUSED no outbox para a bet %s", betId);
-        try {
-            String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_REFUSED", betId));
-            return saveToOutbox(TOPIC, payload);
-        } catch (JsonProcessingException e) {
-            return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
-        }
+    @Override
+    @WithTransaction
+    public Uni<Void> publishPaymentRefunded(UUID betId) {
+        return save("PAYMENT_REFUNDED", betId);
     }
 
-    private Uni<Void> saveToOutbox(String topic, String payload) {
-        OutboxEventEntity outboxEvent = new OutboxEventEntity(
-                UUID.randomUUID(),
-                topic,
-                payload,
-                LocalDateTime.now()
-        );
-        return outboxRepository.persist(outboxEvent).replaceWithVoid();
+    @Override
+    @WithTransaction
+    public Uni<Void> publishPaymentRefundFailed(UUID betId) {
+        return save("PAYMENT_REFUND_FAILED", betId);
+    }
+
+    private Uni<Void> save(String eventType, UUID betId) {
+        try {
+            String payload = objectMapper.writeValueAsString(new PaymentEvent(eventType, betId));
+            return outboxRepository.persist(new OutboxEventEntity(
+                    UUID.randomUUID(), TOPIC, payload, LocalDateTime.now())).replaceWithVoid();
+        } catch (JsonProcessingException exception) {
+            return Uni.createFrom().failure(new IllegalStateException("Falha ao serializar evento de pagamento", exception));
+        }
     }
 }
