@@ -17,6 +17,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.UUID;
+import org.eclipse.microprofile.faulttolerance.Timeout;
 
 @Path("/wallet")
 @Produces(MediaType.APPLICATION_JSON)
@@ -33,6 +34,7 @@ public class CarteiraResource {
 
     @GET
     @Path("/{userId}/balance")
+    @Timeout(3000)
     public Response getBalance(
             @PathParam("userId") UUID userId,
             @HeaderParam("X-Authenticated-User-Id") String authenticatedUserIdHeader) {
@@ -46,6 +48,7 @@ public class CarteiraResource {
 
     @GET
     @Path("/{walletId}/statement")
+    @Timeout(3000)
     public Response getStatement(
             @PathParam("walletId") UUID walletId,
             @QueryParam("page") @DefaultValue("0") int page,
