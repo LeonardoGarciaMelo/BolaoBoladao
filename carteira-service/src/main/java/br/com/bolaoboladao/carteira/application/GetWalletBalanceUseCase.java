@@ -1,6 +1,5 @@
 package br.com.bolaoboladao.carteira.application;
 
-import br.com.bolaoboladao.carteira.domain.exception.WalletNotFoundException;
 import br.com.bolaoboladao.carteira.domain.model.DailyBalance;
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.model.Wallet;
@@ -19,17 +18,21 @@ import java.util.UUID;
 @ApplicationScoped
 public class GetWalletBalanceUseCase {
 
-    @Inject
-    WalletRepository walletRepository;
+    private final WalletRepository walletRepository;
+    private final DailyBalanceRepository dailyBalanceRepository;
+    private final LedgerRepository ledgerRepository;
+    private final WalletCache walletCache;
 
     @Inject
-    DailyBalanceRepository dailyBalanceRepository;
-
-    @Inject
-    LedgerRepository ledgerRepository;
-
-    @Inject
-    WalletCache walletCache;
+    public GetWalletBalanceUseCase(WalletRepository walletRepository,
+                                   DailyBalanceRepository dailyBalanceRepository,
+                                   LedgerRepository ledgerRepository,
+                                   WalletCache walletCache) {
+        this.walletRepository = walletRepository;
+        this.dailyBalanceRepository = dailyBalanceRepository;
+        this.ledgerRepository = ledgerRepository;
+        this.walletCache = walletCache;
+    }
 
     public Uni<BigDecimal> execute(UUID userId) {
         return walletCache.getBalance(userId)
@@ -41,38 +44,41 @@ public class GetWalletBalanceUseCase {
                 });
     }
 
-    private Uni<BigDecimal> calculateAndCache(UUID userId) {
+    public Uni<BigDecimal> calculateBalanceFromDatabase(UUID userId) {
         return walletRepository.findByUserId(userId)
-                .onItem().ifNull().failWith(() -> new WalletNotFoundException(userId))
-                .flatMap(wallet -> {
-                    LocalDate today = LocalDate.now();
-                    return dailyBalanceRepository.findLatestByWalletIdBeforeDate(wallet.id(), today.minusDays(1))
-                            .flatMap(latestSnapshot -> {
-                                BigDecimal previousBalance = latestSnapshot
-                                        .map(DailyBalance::balance)
-                                        .orElse(BigDecimal.ZERO);
-
-                                LocalDate startDate = latestSnapshot
-                                        .map(snapshot -> snapshot.date().plusDays(1))
-                                        .orElse(LocalDate.ofEpochDay(0));
-
-                                return ledgerRepository.findByWalletIdAndDateBetween(wallet.id(), startDate, today)
-                                        .map(ledgers -> {
-                                            BigDecimal currentBalance = previousBalance;
-                                            for (Ledger entry : ledgers) {
-                                                currentBalance = applyLedgerEntry(currentBalance, entry);
-                                            }
-                                            return currentBalance;
-                                        })
-                                        .flatMap(currentBalance -> walletCache.setBalance(userId, currentBalance)
-                                                .replaceWith(currentBalance));
-                            });
-                });
+                .onItem().ifNull().switchTo(() -> {
+                    Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
+                    return walletRepository.save(newWallet).replaceWith(newWallet);
+                })
+                .flatMap(this::calculateCurrentBalance);
     }
 
-    private BigDecimal applyLedgerEntry(BigDecimal balance, Ledger entry) {
-        return entry.isCredit()
-                ? balance.add(entry.amount())
-                : balance.subtract(entry.amount());
+    private Uni<BigDecimal> calculateAndCache(UUID userId) {
+        return calculateBalanceFromDatabase(userId)
+                .flatMap(currentBalance -> walletCache.setBalance(userId, currentBalance)
+                        .replaceWith(currentBalance));
+    }
+
+    private Uni<BigDecimal> calculateCurrentBalance(Wallet wallet) {
+        LocalDate today = LocalDate.now();
+        return dailyBalanceRepository.findLatestByWalletIdBeforeDate(wallet.id(), today.minusDays(1))
+                .flatMap(latestSnapshot -> {
+                    BigDecimal previousBalance = latestSnapshot != null
+                            ? latestSnapshot.balance()
+                            : BigDecimal.ZERO;
+
+                    LocalDate startDate = latestSnapshot != null
+                            ? latestSnapshot.date().plusDays(1)
+                            : LocalDate.ofEpochDay(0);
+
+                    return ledgerRepository.findByWalletIdAndDateBetween(wallet.id(), startDate, today)
+                            .map(ledgers -> {
+                                BigDecimal currentBalance = previousBalance;
+                                for (Ledger entry : ledgers) {
+                                    currentBalance = entry.applyTo(currentBalance);
+                                }
+                                return currentBalance;
+                            });
+                });
     }
 }

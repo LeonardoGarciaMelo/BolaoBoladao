@@ -1,6 +1,5 @@
 package br.com.bolaoboladao.carteira.application;
 
-import br.com.bolaoboladao.carteira.domain.exception.WalletNotFoundException;
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
 import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
@@ -18,25 +17,29 @@ import java.util.UUID;
 @ApplicationScoped
 public class ProcessBetPaymentUseCase {
 
-    @Inject
-    WalletRepository walletRepository;
+    private final WalletRepository walletRepository;
+    private final LedgerRepository ledgerRepository;
+    private final PaymentEventPublisher paymentEventPublisher;
+    private final WalletCache walletCache;
+    private final GetWalletBalanceUseCase getWalletBalanceUseCase;
 
     @Inject
-    LedgerRepository ledgerRepository;
-
-    @Inject
-    PaymentEventPublisher paymentEventPublisher;
-
-    @Inject
-    WalletCache walletCache;
-
-    @Inject
-    GetWalletBalanceUseCase getWalletBalanceUseCase;
+    public ProcessBetPaymentUseCase(WalletRepository walletRepository,
+                                    LedgerRepository ledgerRepository,
+                                    PaymentEventPublisher paymentEventPublisher,
+                                    WalletCache walletCache,
+                                    GetWalletBalanceUseCase getWalletBalanceUseCase) {
+        this.walletRepository = walletRepository;
+        this.ledgerRepository = ledgerRepository;
+        this.paymentEventPublisher = paymentEventPublisher;
+        this.walletCache = walletCache;
+        this.getWalletBalanceUseCase = getWalletBalanceUseCase;
+    }
 
     @WithTransaction
     public Uni<Void> executeBetCreated(UUID betId, UUID userId, BigDecimal amount) {
         return findAndLockWalletOrThrow(userId)
-                .flatMap(wallet -> getWalletBalanceUseCase.execute(userId)
+                .flatMap(wallet -> getWalletBalanceUseCase.calculateBalanceFromDatabase(userId)
                         .flatMap(currentBalance -> {
                             if (currentBalance.compareTo(amount) < 0) {
                                 return paymentEventPublisher.publishPaymentRefused(betId);
@@ -58,7 +61,10 @@ public class ProcessBetPaymentUseCase {
 
     private Uni<Wallet> findAndLockWalletOrThrow(UUID userId) {
         return walletRepository.findAndLockByUserId(userId)
-                .onItem().ifNull().failWith(() -> new WalletNotFoundException(userId));
+                .onItem().ifNull().switchTo(() -> {
+                    Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
+                    return walletRepository.save(newWallet).replaceWith(newWallet);
+                });
     }
 
     private Uni<Void> recordLedgerEntry(UUID walletId, Ledger.Reason reason, Ledger.Operation operation, BigDecimal amount) {
