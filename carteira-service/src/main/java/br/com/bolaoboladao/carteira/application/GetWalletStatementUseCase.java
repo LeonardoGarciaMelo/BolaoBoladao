@@ -1,9 +1,11 @@
 package br.com.bolaoboladao.carteira.application;
 
 import br.com.bolaoboladao.carteira.domain.model.Ledger;
+import br.com.bolaoboladao.carteira.domain.model.Wallet;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import br.com.bolaoboladao.carteira.domain.service.WalletCache;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -28,6 +30,7 @@ public class GetWalletStatementUseCase {
         this.walletRepository = walletRepository;
     }
 
+    @WithTransaction
     public Uni<List<Ledger>> execute(UUID authenticatedUserId, UUID walletId, int page, int size) {
         return walletRepository.findByUserId(authenticatedUserId)
                 .onItem().ifNull().switchTo(() -> {

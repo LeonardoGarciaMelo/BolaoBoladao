@@ -7,6 +7,7 @@ import br.com.bolaoboladao.carteira.infrastructure.persistence.repository.Panach
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.reactive.messaging.MutinyEmitter;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -14,7 +15,6 @@ import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.logging.Logger;
 
 import java.time.LocalDateTime;
@@ -28,7 +28,7 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
 
     @Inject
     @Channel(TOPIC)
-    Emitter<String> walletEventEmitter;
+    MutinyEmitter<String> walletEventEmitter;
 
     @Inject
     ObjectMapper objectMapper;
@@ -44,7 +44,7 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
     public Uni<Void> publishPaymentAccepted(UUID betId) {
         try {
             String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_ACCEPTED", betId));
-            return Uni.createFrom().completionStage(() -> walletEventEmitter.send(payload));
+            return walletEventEmitter.send(payload);
         } catch (JsonProcessingException e) {
             return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
         }
@@ -68,7 +68,7 @@ public class KafkaPaymentEventPublisher implements PaymentEventPublisher {
     public Uni<Void> publishPaymentRefused(UUID betId) {
         try {
             String payload = objectMapper.writeValueAsString(new PaymentEvent("PAYMENT_REFUSED", betId));
-            return Uni.createFrom().completionStage(() -> walletEventEmitter.send(payload));
+            return walletEventEmitter.send(payload);
         } catch (JsonProcessingException e) {
             return Uni.createFrom().failure(new RuntimeException("Error serializing PaymentEvent", e));
         }

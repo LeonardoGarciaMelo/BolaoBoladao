@@ -6,6 +6,7 @@ import br.com.bolaoboladao.carteira.domain.repository.DailyBalanceRepository;
 import br.com.bolaoboladao.carteira.domain.repository.LedgerRepository;
 import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
 import br.com.bolaoboladao.carteira.domain.service.WalletCache;
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -33,6 +34,7 @@ public class GetWalletBalanceUseCase {
         this.walletCache = walletCache;
     }
 
+    @WithTransaction
     public Uni<BigDecimal> execute(UUID userId) {
         return walletCache.getBalance(userId)
                 .flatMap(cachedBalance -> {
