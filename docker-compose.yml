@@ -136,6 +136,17 @@ services:
       kafka:
         condition: service_healthy
 
+  api-gateway:
+    image: nginx:alpine
+    container_name: bolao-api-gateway
+    volumes:
+      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - partidas-service
+      - carteira-service
+
   # --- placeholders para os próximos serviços do grupo ---
   # apostas-db:
   #   image: postgres:16-alpine
