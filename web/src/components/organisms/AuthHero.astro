@@ -3,22 +3,30 @@ import tigerHero from "../../assets/tiger-football-hero.png";
 import FeatureCallout from "../molecules/FeatureCallout.astro";
 
 const features = [
-  { icon: "trophy" as const, title: "PREDIGA", text: " o resultado" },
+  { icon: "trophy" as const, title: "PALPITE", text: " o placar" },
   { icon: "target" as const, title: "ACERTE", text: " mais palpites" },
   { icon: "chart" as const, title: "SUBA", text: " no ranking" },
 ];
 ---
 
-<aside class="auth-hero">
-  <div class="auth-hero__glow"></div>
+<aside class="auth-hero" aria-label="Boas-vindas ao Bolão Boladão">
   <div class="auth-hero__copy">
-    <h1>Futebol é só o começo.</h1>
+    <h1>
+      <span class="sr-only">Futebol é só o começo.</span>
+      <span class="auth-hero__title auth-hero__title--mobile" aria-hidden="true">
+        <span>Futebol é</span>
+        <span>Só o</span>
+        <span><em>começo.</em></span>
+      </span>
+      <span class="auth-hero__title auth-hero__title--desktop" aria-hidden="true">
+        <span>Futebol é só</span>
+        <span>O <em>começo.</em></span>
+      </span>
+    </h1>
     <p>Entre no bolão, acompanhe os jogos e mostre que entende de campo.</p>
   </div>
   <ul class="auth-hero__features">
     {features.map((feature) => <FeatureCallout {...feature} />)}
   </ul>
-  <div class="auth-hero__media">
-    <img class="auth-hero__mascot" src={tigerHero.src} width={tigerHero.width} height={tigerHero.height} alt="Mascote tigre do Bolão Boladão em campo" />
-  </div>
+  <img class="auth-hero__mascot" src={tigerHero.src} width={tigerHero.width} height={tigerHero.height} alt="Mascote tigre do Bolão Boladão em campo" />
 </aside>

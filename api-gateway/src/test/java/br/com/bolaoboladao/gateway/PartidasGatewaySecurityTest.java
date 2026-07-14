@@ -28,6 +28,14 @@ class PartidasGatewaySecurityTest {
     }
 
     @Test
+    void deveExporDestaquesDePalpitesSemToken() {
+        given()
+                .when().get("/api/palpites/destaques")
+                .then()
+                .statusCode(204);
+    }
+
+    @Test
     void deveRecusarTokenMalformado() {
         given()
                 .header("Authorization", "Bearer nao-e-um-jwt")

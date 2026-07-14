@@ -9,6 +9,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "test:e2e:gateway": "playwright test",
     "astro": "astro"
   },
   "dependencies": {

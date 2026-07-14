@@ -1,26 +1,103 @@
 ---
-import MatchTeaser from "../molecules/MatchTeaser.astro";
-
-const matches = [
-  {
-    status: "AO VIVO", time: "21:30", prediction: [2, 1] as [number, number], stake: "R$ 10,00",
-    home: { name: "Aurora", monogram: "A", primary: "#3c8cff", secondary: "#d9f3ff", variant: "shield" as const },
-    away: { name: "Estrela", monogram: "E", primary: "#ff5d19", secondary: "#ffd0b9", variant: "diamond" as const },
-  },
-  {
-    status: "HOJE", time: "19:00", prediction: [1, 0] as [number, number], stake: "R$ 25,00",
-    home: { name: "Lime", monogram: "L", primary: "#c7ff37", secondary: "#efffc0", variant: "round" as const },
-    away: { name: "Oceano", monogram: "O", primary: "#32d7ff", secondary: "#baf4ff", variant: "shield" as const },
-  },
-  {
-    status: "AMANHÃ", time: "16:00", prediction: [3, 2] as [number, number], stake: "R$ 50,00",
-    home: { name: "Violeta", monogram: "V", primary: "#b770ff", secondary: "#ead7ff", variant: "diamond" as const },
-    away: { name: "Rubro", monogram: "R", primary: "#ff3a4d", secondary: "#ffcad0", variant: "round" as const },
-  },
-];
 ---
 
-<section class="match-rail" aria-labelledby="match-rail-title">
+<section class="match-rail" aria-labelledby="match-rail-title" data-match-highlights hidden>
   <div class="match-rail__heading"><span></span><h2 id="match-rail-title">Partidas em destaque</h2><span></span></div>
-  <div class="match-rail__list">{matches.map((match) => <MatchTeaser {...match} />)}</div>
+  <div class="match-rail__list" data-match-highlights-list></div>
 </section>
+
+<script>
+  import { apiBaseUrl } from "../../scripts/session";
+
+  type Highlight = {
+    matchId: string;
+    teamHome: string;
+    teamAway: string;
+    start: string;
+    status: string;
+    totalStakeCents: number;
+  };
+
+  const crestThemes = [
+    ["#3c8cff", "#d9f3ff", "shield"],
+    ["#ff5d19", "#ffd0b9", "diamond"],
+    ["#c7ff37", "#efffc0", "round"],
+    ["#32d7ff", "#baf4ff", "shield"],
+    ["#b770ff", "#ead7ff", "diamond"],
+    ["#ff3a4d", "#ffcad0", "round"],
+  ] as const;
+
+  const rail = document.querySelector<HTMLElement>("[data-match-highlights]");
+  const list = document.querySelector<HTMLElement>("[data-match-highlights-list]");
+
+  const text = (tag: string, content: string, className?: string) => {
+    const element = document.createElement(tag);
+    element.textContent = content;
+    if (className) element.className = className;
+    return element;
+  };
+
+  const appearanceFor = (name: string) => {
+    const index = Array.from(name).reduce((total, character) => total + character.charCodeAt(0), 0) % crestThemes.length;
+    return crestThemes[index];
+  };
+
+  const team = (name: string) => {
+    const [primary, secondary, variant] = appearanceFor(name);
+    const wrapper = document.createElement("span");
+    wrapper.className = "match-teaser__team";
+    const crest = document.createElement("span");
+    crest.className = `team-crest team-crest--${variant}`;
+    crest.style.setProperty("--crest-primary", primary);
+    crest.style.setProperty("--crest-secondary", secondary);
+    crest.setAttribute("aria-label", name);
+    crest.title = name;
+    crest.append(text("span", "", "team-crest__shine"), text("strong", name.trim().charAt(0).toUpperCase()));
+    wrapper.append(crest, text("small", name));
+    return wrapper;
+  };
+
+  const liveStatuses = new Set(["LIVE", "IN_PROGRESS"]);
+  const statusLabel = (status: string) => ({ LIVE: "AO VIVO", IN_PROGRESS: "AO VIVO", SCHEDULED: "EM BREVE", FINISHED: "ENCERRADA", CANCELED: "CANCELADA" }[status] ?? status);
+  const timeLabel = (start: string) => new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(start));
+  const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+
+  const renderHighlight = (highlight: Highlight) => {
+    const item = document.createElement("article");
+    item.className = "match-teaser";
+    item.dataset.matchId = highlight.matchId;
+    const header = document.createElement("header");
+    const status = text("span", statusLabel(highlight.status));
+    if (liveStatuses.has(highlight.status)) status.classList.add("match-teaser__live");
+    header.append(status, text("time", timeLabel(highlight.start)));
+
+    const teams = document.createElement("div");
+    teams.className = "match-teaser__teams";
+    teams.setAttribute("aria-label", `${highlight.teamHome} contra ${highlight.teamAway}`);
+    teams.append(team(highlight.teamHome), text("b", "×"), team(highlight.teamAway));
+
+    const stake = document.createElement("div");
+    stake.className = "match-teaser__stake";
+    stake.append(text("small", "MONTANTE NO BOLÃO"), text("strong", money(highlight.totalStakeCents)));
+    item.append(header, teams, stake);
+    return item;
+  };
+
+  const loadHighlights = async () => {
+    if (!rail || !list) return;
+    try {
+      // TODO(palpites-service): GET /api/palpites/destaques retorna { highlights: Highlight[] }.
+      // Cada destaque é público e agregado: nunca inclui placar previsto nem identidade de usuário.
+      const response = await fetch(`${apiBaseUrl}/palpites/destaques`);
+      if (!response.ok || response.status === 204) return;
+      const payload = await response.json() as { highlights?: Highlight[] };
+      if (!Array.isArray(payload.highlights) || payload.highlights.length === 0) return;
+      list.replaceChildren(...payload.highlights.map(renderHighlight));
+      rail.hidden = false;
+    } catch {
+      // O serviço ainda não existe neste incremento: a ausência de destaques é intencional e silenciosa.
+    }
+  };
+
+  void loadHighlights();
+</script>

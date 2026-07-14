@@ -1,11 +1,12 @@
 ---
 interface Props {
   href?: string;
+  label?: string;
 }
 
-const { href = "/partidas" } = Astro.props;
+const { href = "/partidas", label = "Bolão Boladão" } = Astro.props;
 ---
 
-<a class="brand-logo" href={href} aria-label="Bolão Boladão, página de partidas">
+<a class="brand-logo" href={href} aria-label={label}>
   <span>BOLÃO</span> <strong>BOLADÃO</strong>
 </a>

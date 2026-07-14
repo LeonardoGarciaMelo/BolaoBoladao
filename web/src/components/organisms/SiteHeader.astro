@@ -13,6 +13,6 @@ const actionProps = action === "login"
 ---
 
 <header class="site-header">
-  <BrandLogo />
+  <BrandLogo href="/" label="Bolão Boladão, página inicial" />
   {action !== "none" && <Button href={actionProps.href} variant="outline">{actionProps.label}</Button>}
 </header>
