@@ -1,11 +1,12 @@
 package br.com.bolaoboladao.carteira.infrastructure.persistence.repository;
 
-import br.com.bolaoboladao.carteira.domain.repository.ProcessedEventRepository;
+import br.com.bolaoboladao.carteira.application.repository.ProcessedEventRepository;
 import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.ProcessedEventEntity;
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -24,6 +25,6 @@ public class PanacheProcessedEventRepository implements ProcessedEventRepository
     @Override
     public Uni<Boolean> isProcessed(UUID eventId) {
         if (eventId == null) return Uni.createFrom().item(false);
-        return findById(eventId).onItem().transform(entity -> entity != null);
+        return findById(eventId).onItem().transform(Objects::nonNull);
     }
 }
