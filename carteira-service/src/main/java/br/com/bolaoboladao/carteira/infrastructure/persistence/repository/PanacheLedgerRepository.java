@@ -28,7 +28,16 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
 
     @Override
     public List<Ledger> findByWalletIdAndDate(UUID walletId, LocalDate date) {
-        return find("walletId = ?1 and CAST(occurredAt AS date) = ?2", walletId, date)
+        return find("walletId = ?1 and CAST(occurredAt AS date) = ?2 order by occurredAt asc", walletId, date)
+                .stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<Ledger> findByWalletIdAndDateBetween(UUID walletId, LocalDate startDate, LocalDate endDate) {
+        return find("walletId = ?1 and CAST(occurredAt AS date) >= ?2 and CAST(occurredAt AS date) <= ?3 order by occurredAt asc", 
+                walletId, startDate, endDate)
                 .stream()
                 .map(this::toDomain)
                 .toList();

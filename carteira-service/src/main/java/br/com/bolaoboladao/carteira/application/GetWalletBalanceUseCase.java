@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -39,13 +40,19 @@ public class GetWalletBalanceUseCase {
 
         LocalDate today = LocalDate.now();
 
-        BigDecimal previousBalance = dailyBalanceRepository
-                .findByWalletIdAndDate(wallet.id(), today.minusDays(1))
+        Optional<DailyBalance> latestSnapshot = dailyBalanceRepository
+                .findLatestByWalletIdBeforeDate(wallet.id(), today.minusDays(1));
+
+        BigDecimal previousBalance = latestSnapshot
                 .map(DailyBalance::balance)
                 .orElse(BigDecimal.ZERO);
 
+        LocalDate startDate = latestSnapshot
+                .map(snapshot -> snapshot.date().plusDays(1))
+                .orElse(LocalDate.ofEpochDay(0));
+
         BigDecimal currentBalance = ledgerRepository
-                .findByWalletIdAndDate(wallet.id(), today)
+                .findByWalletIdAndDateBetween(wallet.id(), startDate, today)
                 .stream()
                 .reduce(previousBalance, this::applyLedgerEntry, BigDecimal::add);
 

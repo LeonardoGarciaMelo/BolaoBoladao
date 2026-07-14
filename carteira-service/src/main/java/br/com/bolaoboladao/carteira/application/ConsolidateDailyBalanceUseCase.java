@@ -26,13 +26,19 @@ public class ConsolidateDailyBalanceUseCase {
             return;
         }
 
-        BigDecimal previousBalance = dailyBalanceRepository
-                .findByWalletIdAndDate(walletId, date.minusDays(1))
+        Optional<DailyBalance> latestSnapshot = dailyBalanceRepository
+                .findLatestByWalletIdBeforeDate(walletId, date.minusDays(1));
+
+        BigDecimal previousBalance = latestSnapshot
                 .map(DailyBalance::balance)
                 .orElse(BigDecimal.ZERO);
 
+        LocalDate startDate = latestSnapshot
+                .map(snapshot -> snapshot.date().plusDays(1))
+                .orElse(LocalDate.ofEpochDay(0));
+
         BigDecimal currentBalance = ledgerRepository
-                .findByWalletIdAndDate(walletId, date)
+                .findByWalletIdAndDateBetween(walletId, startDate, date)
                 .stream()
                 .reduce(previousBalance, this::applyLedgerEntry, BigDecimal::add);
 

@@ -34,7 +34,7 @@ public class ProcessBetPaymentUseCase {
 
     @Transactional
     public void executeBetCreated(UUID betId, UUID userId, BigDecimal amount) {
-        Wallet wallet = findWalletOrThrow(userId);
+        Wallet wallet = findAndLockWalletOrThrow(userId);
         BigDecimal currentBalance = getWalletBalanceUseCase.execute(userId);
 
         if (currentBalance.compareTo(amount) < 0) {
@@ -49,13 +49,13 @@ public class ProcessBetPaymentUseCase {
 
     @Transactional
     public void executeBetSettled(UUID betId, UUID userId, BigDecimal amount) {
-        Wallet wallet = findWalletOrThrow(userId);
+        Wallet wallet = findAndLockWalletOrThrow(userId);
         recordLedgerEntry(wallet.id(), Ledger.Reason.WIN, Ledger.Operation.CREDIT, amount);
         walletCache.invalidateBalance(userId);
     }
 
-    private Wallet findWalletOrThrow(UUID userId) {
-        return walletRepository.findByUserId(userId)
+    private Wallet findAndLockWalletOrThrow(UUID userId) {
+        return walletRepository.findAndLockByUserId(userId)
                 .orElseThrow(() -> new WalletNotFoundException(userId));
     }
 

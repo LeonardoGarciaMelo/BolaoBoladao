@@ -8,6 +8,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import jakarta.persistence.LockModeType;
 
 @ApplicationScoped
 public class PanacheWalletRepository implements WalletRepository, PanacheRepositoryBase<WalletEntity, UUID> {
@@ -23,6 +24,12 @@ public class PanacheWalletRepository implements WalletRepository, PanacheReposit
     @Override
     public Optional<Wallet> findByUserId(UUID userId) {
         return find("userId", userId).firstResultOptional()
+                .map(this::toDomain);
+    }
+
+    @Override
+    public Optional<Wallet> findAndLockByUserId(UUID userId) {
+        return find("userId", userId).withLock(LockModeType.PESSIMISTIC_WRITE).firstResultOptional()
                 .map(this::toDomain);
     }
 

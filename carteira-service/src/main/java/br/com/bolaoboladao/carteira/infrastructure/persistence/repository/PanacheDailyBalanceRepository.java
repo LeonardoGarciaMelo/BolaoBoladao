@@ -24,13 +24,23 @@ public class PanacheDailyBalanceRepository implements DailyBalanceRepository, Pa
 
     @Override
     public Optional<DailyBalance> findByWalletIdAndDate(UUID walletId, LocalDate date) {
-        return find("walletId = ?1 and balanceDate = ?2", walletId, date)
+        return find("walletId = ?1 and balanceDate = ?2", walletId, date).firstResultOptional()
+                .map(this::toDomain);
+    }
+
+    @Override
+    public Optional<DailyBalance> findLatestByWalletIdBeforeDate(UUID walletId, LocalDate date) {
+        return find("walletId = ?1 and balanceDate <= ?2 order by balanceDate desc", walletId, date)
                 .firstResultOptional()
-                .map(entity -> new DailyBalance(
-                        entity.getId(),
-                        entity.getWalletId(),
-                        entity.getBalance(),
-                        entity.getBalanceDate()
-                ));
+                .map(this::toDomain);
+    }
+
+    private DailyBalance toDomain(DailyBalanceEntity entity) {
+        return new DailyBalance(
+                entity.getId(),
+                entity.getWalletId(),
+                entity.getBalance(),
+                entity.getBalanceDate()
+        );
     }
 }

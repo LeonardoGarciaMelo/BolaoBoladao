@@ -8,4 +8,5 @@ import java.util.UUID;
 public interface DailyBalanceRepository {
     void save(DailyBalance dailyBalance);
     Optional<DailyBalance> findByWalletIdAndDate(UUID walletId, LocalDate date);
+    Optional<DailyBalance> findLatestByWalletIdBeforeDate(UUID walletId, LocalDate date);
 }

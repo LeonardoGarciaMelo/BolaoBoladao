@@ -8,5 +8,6 @@ import java.util.UUID;
 public interface LedgerRepository {
     void save(Ledger ledger);
     List<Ledger> findByWalletIdAndDate(UUID walletId, LocalDate date);
+    List<Ledger> findByWalletIdAndDateBetween(UUID walletId, LocalDate startDate, LocalDate endDate);
     List<Ledger> findByWalletIdPaged(UUID walletId, int page, int size);
 }
