@@ -1,30 +1,31 @@
 package br.com.bolaoboladao.carteira.infrastructure.persistence.repository;
 
-import br.com.bolaoboladao.carteira.domain.repository.ProcessedEventRepository;
+import br.com.bolaoboladao.carteira.application.repository.ProcessedEventRepository;
 import br.com.bolaoboladao.carteira.infrastructure.persistence.entity.ProcessedEventEntity;
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
+import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.transaction.Transactional;
+
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 @ApplicationScoped
 public class PanacheProcessedEventRepository implements ProcessedEventRepository, PanacheRepositoryBase<ProcessedEventEntity, UUID> {
 
     @Override
-    @Transactional
-    public void markAsProcessed(UUID eventId, String eventType) {
-        if (eventId == null) return;
+    public Uni<Void> markAsProcessed(UUID eventId, String eventType) {
+        if (eventId == null) return Uni.createFrom().voidItem();
         ProcessedEventEntity entity = new ProcessedEventEntity();
         entity.setEventId(eventId);
         entity.setEventType(eventType);
         entity.setProcessedAt(LocalDateTime.now());
-        persist(entity);
+        return persist(entity).replaceWithVoid();
     }
 
     @Override
-    public boolean isProcessed(UUID eventId) {
-        if (eventId == null) return false;
-        return findByIdOptional(eventId).isPresent();
+    public Uni<Boolean> isProcessed(UUID eventId) {
+        if (eventId == null) return Uni.createFrom().item(false);
+        return findById(eventId).onItem().transform(Objects::nonNull);
     }
 }

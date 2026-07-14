@@ -1,13 +1,20 @@
 package br.com.bolaoboladao.carteira.domain.repository;
 
 import br.com.bolaoboladao.carteira.domain.model.Wallet;
+import io.smallrye.mutiny.Uni;
+
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public interface WalletRepository {
-    void save(Wallet wallet);
-    Optional<Wallet> findByUserId(UUID userId);
-    Optional<Wallet> findAndLockByUserId(UUID userId);
-    List<Wallet> findAllWallets();
+
+    Uni<Void> save(Wallet wallet);
+
+    Uni<Wallet> findByUserId(UUID userId);
+
+    Uni<Wallet> findAndLockByUserId(UUID userId);
+
+    Uni<List<Wallet>> findWalletsPaged(int page, int size);
+
+    Uni<Long> countWallets();
 }

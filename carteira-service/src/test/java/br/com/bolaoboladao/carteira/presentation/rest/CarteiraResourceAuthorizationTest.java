@@ -1,27 +1,34 @@
 package br.com.bolaoboladao.carteira.presentation.rest;
 
-import br.com.bolaoboladao.carteira.domain.model.Wallet;
-import br.com.bolaoboladao.carteira.domain.repository.WalletRepository;
+import br.com.bolaoboladao.carteira.application.GetWalletBalanceUseCase;
+import br.com.bolaoboladao.carteira.application.GetWalletStatementUseCase;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
-import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.when;
 
 class CarteiraResourceAuthorizationTest {
     private static final UUID AUTHENTICATED_USER_ID = UUID.fromString("22121193-3c26-4c26-812d-123456789012");
     private static final UUID WALLET_ID = UUID.fromString("33121193-3c26-4c26-812d-123456789012");
 
     private CarteiraResource resource;
+    private ContainerRequestContext requestContext;
 
     @BeforeEach
     void setUp() {
-        resource = new CarteiraResource();
-        resource.walletRepository = new InMemoryWalletRepository(new Wallet(WALLET_ID, AUTHENTICATED_USER_ID));
+        GetWalletBalanceUseCase getWalletBalanceUseCase = Mockito.mock(GetWalletBalanceUseCase.class);
+        GetWalletStatementUseCase getWalletStatementUseCase = Mockito.mock(GetWalletStatementUseCase.class);
+
+        resource = new CarteiraResource(getWalletBalanceUseCase, getWalletStatementUseCase);
+
+        requestContext = Mockito.mock(ContainerRequestContext.class);
+        when(requestContext.getProperty("authenticatedUserId")).thenReturn(AUTHENTICATED_USER_ID);
     }
 
     @Test
@@ -29,41 +36,15 @@ class CarteiraResourceAuthorizationTest {
         UUID anotherUserId = UUID.fromString("44121193-3c26-4c26-812d-123456789012");
 
         assertThrows(ForbiddenException.class,
-                () -> resource.getBalance(anotherUserId, AUTHENTICATED_USER_ID.toString()));
-    }
-
-    @Test
-    void deveRecusarExtratoDeCarteiraQueNaoPertenceAoUsuario() {
-        UUID anotherWalletId = UUID.fromString("55121193-3c26-4c26-812d-123456789012");
-
-        assertThrows(ForbiddenException.class,
-                () -> resource.getStatement(anotherWalletId, 0, 10, AUTHENTICATED_USER_ID.toString()));
+                () -> resource.getBalance(anotherUserId, requestContext));
     }
 
     @Test
     void deveRecusarIdentidadeAusenteOuInvalida() {
-        assertThrows(ForbiddenException.class, () -> resource.getBalance(AUTHENTICATED_USER_ID, null));
-        assertThrows(ForbiddenException.class, () -> resource.getStatement(WALLET_ID, 0, 10, "invalida"));
-    }
+        ContainerRequestContext invalidContext = Mockito.mock(ContainerRequestContext.class);
+        when(invalidContext.getProperty("authenticatedUserId")).thenReturn(null);
 
-    private record InMemoryWalletRepository(Wallet wallet) implements WalletRepository {
-        @Override
-        public void save(Wallet wallet) {
-        }
-
-        @Override
-        public Optional<Wallet> findByUserId(UUID userId) {
-            return wallet.userId().equals(userId) ? Optional.of(wallet) : Optional.empty();
-        }
-
-        @Override
-        public Optional<Wallet> findAndLockByUserId(UUID userId) {
-            return findByUserId(userId);
-        }
-
-        @Override
-        public List<Wallet> findAllWallets() {
-            return List.of(wallet);
-        }
+        assertThrows(ForbiddenException.class, () -> resource.getBalance(AUTHENTICATED_USER_ID, invalidContext));
+        assertThrows(ForbiddenException.class, () -> resource.getStatement(WALLET_ID, 0, 10, invalidContext));
     }
 }
