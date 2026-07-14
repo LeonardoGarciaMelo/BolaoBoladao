@@ -1,9 +1,7 @@
-# ADR-002 — Publicação de eventos de partida (planejado)
+# ADR-002 — Publicação de eventos de partida
 
 ## Status
-Proposto — ainda não implementado nesta entrega. Registrado agora para
-deixar explícita a decisão de design antes de o Kafka ser ligado ao
-`partidas-service`.
+Aceito - Implementado no partidas-service.
 
 ## Contexto
 O serviço de Apostas precisa saber quando uma partida começa (para travar

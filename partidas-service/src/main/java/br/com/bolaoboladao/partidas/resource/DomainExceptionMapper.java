@@ -15,6 +15,9 @@ public class DomainExceptionMapper implements ExceptionMapper<RuntimeException> 
 
     @Override
     public Response toResponse(RuntimeException exception) {
+        if (exception instanceof jakarta.ws.rs.WebApplicationException wae) {
+            return wae.getResponse();
+        }
         if (exception instanceof MatchNotFoundException) {
             return build(Response.Status.NOT_FOUND, exception.getMessage());
         }
@@ -25,6 +28,7 @@ public class DomainExceptionMapper implements ExceptionMapper<RuntimeException> 
             return build(Response.Status.BAD_REQUEST, cve.getMessage());
         }
         // Fallback: não vaza stacktrace pro cliente
+        exception.printStackTrace();
         return build(Response.Status.INTERNAL_SERVER_ERROR, "Erro interno inesperado");
     }
 

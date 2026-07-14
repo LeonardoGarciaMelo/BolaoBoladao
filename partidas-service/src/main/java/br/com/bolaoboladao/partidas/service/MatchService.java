@@ -1,12 +1,15 @@
 package br.com.bolaoboladao.partidas.service;
 
+import br.com.bolaoboladao.partidas.cache.MatchCache;
 import br.com.bolaoboladao.partidas.domain.Match;
 import br.com.bolaoboladao.partidas.domain.MatchEvent;
 import br.com.bolaoboladao.partidas.domain.MatchEventType;
 import br.com.bolaoboladao.partidas.domain.MatchStatus;
 import br.com.bolaoboladao.partidas.domain.Team;
 import br.com.bolaoboladao.partidas.dto.CreateMatchRequest;
+import br.com.bolaoboladao.partidas.dto.MatchResponse;
 import br.com.bolaoboladao.partidas.dto.ScoreEventRequest;
+import br.com.bolaoboladao.partidas.mapper.MatchMapper;
 import br.com.bolaoboladao.partidas.repository.MatchEventRepository;
 import br.com.bolaoboladao.partidas.repository.MatchRepository;
 import br.com.bolaoboladao.partidas.repository.TeamRepository;
@@ -16,6 +19,7 @@ import jakarta.inject.Inject;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -23,9 +27,8 @@ import java.util.UUID;
  *
  * Nota sobre eventos: cada transição relevante grava um MatchEvent (fonte de
  * verdade interna, append-only). A publicação desses eventos no Kafka
- * (tópico match-events, conforme %MatchEvent do diagrama) ainda não está
- * implementada aqui - fica para quando o fluxo assíncrono do grupo for ligado
- * (ver docs/adr/ADR-002-eventos-partida.md).
+ * (tópico match-events, conforme %MatchEvent do diagrama) agora é feita pelo
+ * MatchOutboxRelay em background.
  */
 @ApplicationScoped
 public class MatchService {
@@ -38,6 +41,9 @@ public class MatchService {
 
     @Inject
     MatchEventRepository matchEventRepository;
+
+    @Inject
+    MatchCache matchCache;
 
     public Match createMatch(CreateMatchRequest request) {
         return QuarkusTransaction.requiringNew().call(() -> {
@@ -73,6 +79,7 @@ public class MatchService {
             match.status = MatchStatus.IN_PROGRESS;
 
             recordEvent(match, MatchEventType.MATCH_STARTED);
+            matchCache.evict(matchId);
             return match;
         });
     }
@@ -96,6 +103,7 @@ public class MatchService {
             }
 
             recordEvent(match, eventType);
+            matchCache.evict(matchId);
             return match;
         });
     }
@@ -113,8 +121,19 @@ public class MatchService {
             match.end = LocalDateTime.now();
 
             recordEvent(match, MatchEventType.MATCH_ENDED);
+            matchCache.evict(matchId);
             return match;
         });
+    }
+
+    public MatchResponse findResponseById(UUID matchId) {
+        return matchCache.get(matchId)
+                .orElseGet(() -> {
+                    Match match = getOrThrow(matchId);
+                    MatchResponse response = MatchMapper.toResponse(match);
+                    matchCache.put(matchId, response);
+                    return response;
+                });
     }
 
     public Match findByIdOrThrow(UUID matchId) {

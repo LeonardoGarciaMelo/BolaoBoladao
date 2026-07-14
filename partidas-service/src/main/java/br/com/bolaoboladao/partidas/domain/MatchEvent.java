@@ -41,6 +41,10 @@ public class MatchEvent extends PanacheEntity {
     @Column(name = "occurred_at", nullable = false)
     public LocalDateTime occurredAt;
 
+    @NotNull
+    @Column(name = "published", nullable = false)
+    public boolean published = false;
+
     public MatchEvent() {
     }
 

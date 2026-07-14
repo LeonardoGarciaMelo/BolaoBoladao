@@ -41,8 +41,7 @@ public class MatchResource {
     @GET
     @Path("/{id}")
     public MatchResponse findById(@PathParam("id") UUID id) {
-        Match match = matchService.findByIdOrThrow(id);
-        return MatchMapper.toResponse(match);
+        return matchService.findResponseById(id);
     }
 
     @GET
