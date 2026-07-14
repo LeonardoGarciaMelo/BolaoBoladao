@@ -31,8 +31,8 @@ API Gateway
 Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetura.md).
 
 **Status atual:** Partidas, Usuários, Carteira/Pagamentos, API Gateway e a
-integração via Kafka estão implementados. Apostas permanece para os próximos
-incrementos.
+integração via Kafka estão implementados. Apostas possui versão inicial em
+Python para criação de apostas e emissão de evento `BET_CREATED`.
 
 ## Serviços
 
@@ -43,7 +43,7 @@ incrementos.
 | `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | pública (8080) |
 | `web` | ✅ implementado | Astro + Nginx | interna (80) |
 | `carteira-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Redis + Kafka | interna (8080) |
-| `apostas-service` | ⏳ pendente | — | — |
+| `apostas-service` | ✅ versão inicial | FastAPI (Python 3.12) + PostgreSQL + Kafka | interna (8000) |
 
 ## Perfis de execução
 
@@ -151,7 +151,7 @@ bolao-boladao/
 ├── user-service/            # ✅ implementado
 ├── api-gateway/             # ✅ implementado (Quarkus + JWT)
 ├── web/                     # ✅ implementado
-├── apostas-service/         # ⏳ pendente
+├── apostas-service/         # ✅ versão inicial (FastAPI)
 ├── carteira-service/        # ✅ implementado
 └── pom.xml                  # parent, multi-módulo, profiles A/B/C
 ```
