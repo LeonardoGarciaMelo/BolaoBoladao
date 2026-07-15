@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { dialogBySelector, expectCenteredDialog } from "./helpers/dialog";
 
-const admin = { username: "admin", password: "admin-seguro-123" };
+const admin = { username: "admin", password: "admin-boladao" };
 
 async function login(page: import("@playwright/test").Page, credentials = admin) {
   await page.goto("/login");
@@ -336,7 +336,7 @@ test("ciclo automático inicia e encerra a partida e atualiza o palpite", async 
   await expect.poll(async () => {
     const response = await request.get(`/api/bets/${bet.bet_id}`, { headers: userHeaders });
     return response.ok() ? (await response.json()).status : "";
-  }, { timeout: 15_000, intervals: [500, 1000] }).toBe("AWAITING_SETTLEMENT");
+  }, { timeout: 15_000, intervals: [500, 1000] }).toBe("WON");
 });
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {
