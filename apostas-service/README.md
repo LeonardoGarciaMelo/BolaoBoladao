@@ -76,11 +76,22 @@ O filtro aceita um ou mais estados separados por vírgula.
 Consulta um único palpite e retorna `404` quando ele não pertence ao usuário.
 
 Os estados apresentados são `PROCESSING`, `CONFIRMED`,
-`WON`, `LOST`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
+`AWAITING_SETTLEMENT`, `WON`, `LOST`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
 e `REFUND_FAILED`. `WON` e `LOST` são gerados na apuração quando a partida encerra,
 juntamente com o envio do prêmio correspondente para a carteira do usuário no caso de vitória.
 
-Published Kafka event:
+Somente um palpite `CONFIRMED` cujo placar previsto seja idêntico ao placar final
+é vencedor. Se não houver acerto exato, todos perdem e nenhum `BET_SETTLED` é
+publicado. Havendo um ou mais vencedores, o prêmio de cada um é calculado por
+`bolão total × valor do palpite vencedor ÷ soma dos valores dos vencedores`.
+O bolão total contém todos os palpites confirmados da partida. Não existe bônus,
+multiplicador ou prêmio mínimo; o valor publicado em `BET_SETTLED` é o crédito
+total, incluindo o valor originalmente debitado do palpite vencedor. O cálculo
+é feito em centavos: sobras são atribuídas pelas maiores frações e, em caso de
+empate, pelo identificador do palpite. A soma dos prêmios coincide com o bolão.
+
+Eventos Kafka publicados usam o mesmo envelope. `BET_CREATED` solicita o débito
+e `BET_SETTLED` solicita o crédito do prêmio calculado:
 
 ```json
 {

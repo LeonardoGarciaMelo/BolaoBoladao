@@ -68,6 +68,18 @@ Crédito compensatório `BET_REFUND` vinculado ao débito do palpite. É iniciad
 
 Registro individual feito por um usuário para uma partida, composto pelo placar exato previsto e pelo valor comprometido. **Apostar** é a ação; na interface, **aposta** não é o nome do registro. Um usuário pode fazer vários palpites para a mesma partida, inclusive palpites idênticos, desde que cada nova submissão use uma chave de idempotência diferente e haja saldo disponível.
 
+## Apuração do palpite
+
+Comparação realizada por Apostas quando recebe `MATCH_ENDED`. Participam somente palpites financeiros `CONFIRMED`. Um palpite ganha exclusivamente quando o placar previsto do mandante e do visitante coincide exatamente com o placar final; qualquer diferença resulta em `LOST`. Se ninguém acertar o placar exato, não existe ganhador nem pagamento de prêmio.
+
+## Bolão da partida
+
+Soma dos valores de todos os palpites `CONFIRMED` da partida, inclusive os perdedores. Palpites recusados, cancelados ou ainda em processamento não compõem o bolão.
+
+## Prêmio
+
+Crédito `WIN` pago a cada palpite vencedor. O bolão da partida é dividido entre os acertos exatos proporcionalmente ao valor comprometido em cada palpite: `bolão × valor do palpite vencedor ÷ soma dos valores dos vencedores`. O rateio é feito em centavos: após a parte inteira, os centavos restantes seguem as maiores frações do cálculo; empates são resolvidos pelo identificador do palpite. Assim, a soma dos prêmios é sempre exatamente igual ao bolão. Não existe bônus, multiplicador ou prêmio mínimo. O crédito representa o retorno total do palpite vencedor, incluindo o valor anteriormente debitado, e não apenas o lucro líquido.
+
 ## Janela de palpites
 
 Período em que uma partida aceita novos palpites. Começa com a partida `SCHEDULED` e termina no horário de início previsto ou quando a partida deixa esse estado, o que ocorrer primeiro. No limite exato do horário previsto, a janela já está fechada.

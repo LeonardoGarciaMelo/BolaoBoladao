@@ -141,7 +141,8 @@ partida está `SCHEDULED` e o horário previsto ainda é futuro.
 Um scheduler configurável (`MATCH_LIFECYCLE_INTERVAL`, padrão `1s`) consulta
 PostgreSQL e avança partidas vencidas. Cada agregado usa lock pessimista e
 transação independente. Se o serviço recuperar uma partida cujo ciclo inteiro
-venceu, grava `MATCH_STARTED` e depois `MATCH_ENDED`, sem apurar prêmios.
+venceu, grava `MATCH_STARTED` e depois `MATCH_ENDED`. Partidas não apura prêmios
+diretamente; o evento final dispara a apuração no contexto de Apostas.
 
 ## Domínio: Carteira/Pagamentos (implementado)
 
@@ -193,8 +194,9 @@ Apostas
 - team_home_score, team_away_score : int
 - bet_amount : Decimal
 - idempotency_key : String (única por usuário)
-- status persistido : CREATED | CONFIRMED | PAYMENT_REFUSED | CANCEL_PENDING |
-  REFUND_PENDING | CANCELED | REFUND_FAILED
+- status persistido : CREATED | CONFIRMED | WON | LOST | PAYMENT_REFUSED |
+  CANCEL_PENDING | REFUND_PENDING | CANCELED | REFUND_FAILED
+- won_amount : Decimal opcional
 
 @match_snapshot
 - match_id, team_home, team_away, scheduled_start
@@ -202,6 +204,7 @@ Apostas
 
 %BetEvent
 BET_CREATED { bet_id, user_id, match_id, team_home_score, team_away_score, bet_amount }
+BET_SETTLED { bet_id, user_id, amount }
 BET_REFUND_REQUESTED { bet_id, user_id, amount }
 
 Carteira/Pagamentos
@@ -222,10 +225,19 @@ pelo menos R$ 1,00.
 
 As leituras `GET /bets` e `GET /bets/{id}` são sempre limitadas ao proprietário
 derivado do JWT. A API apresenta os estados `PROCESSING`, `CONFIRMED`,
-`AWAITING_SETTLEMENT`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
-e `REFUND_FAILED`. `AWAITING_SETTLEMENT` é derivado para um palpite confirmado
-quando a projeção da partida termina; este incremento não apura nem paga
-prêmios.
+`AWAITING_SETTLEMENT`, `WON`, `LOST`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`,
+`CANCELED` e `REFUND_FAILED`. Quando recebe `MATCH_ENDED`, Apostas compara o
+placar final com todos os palpites `CONFIRMED`: somente acertos exatos recebem
+`WON`; os demais recebem `LOST`. Sem acerto exato, nenhum prêmio é emitido.
+
+O bolão é a soma dos valores de todos os palpites confirmados. Quando há mais de
+um vencedor, ele é dividido proporcionalmente aos valores comprometidos pelos
+vencedores. Não existe bônus ou piso mínimo. Apostas publica `BET_SETTLED` com o
+crédito total de cada vencedor, e Carteira registra esse valor como `WIN/CREDIT`
+de forma idempotente.
+
+O rateio usa centavos inteiros e o método das maiores frações, com desempate pelo
+identificador do palpite, para preservar exatamente o valor total do bolão.
 
 O fluxo completo de cancelamento está no [ADR-004](adr/ADR-004-saga-cancelamento-estorno.md).
 Os limites de contexto estão registrados em [`CONTEXT-MAP.md`](../CONTEXT-MAP.md).

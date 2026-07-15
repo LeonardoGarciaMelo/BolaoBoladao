@@ -309,7 +309,7 @@ test("ciclo automático inicia e encerra a partida e atualiza o palpite", async 
   await expect.poll(async () => {
     const response = await request.post("/api/bets", {
       headers: { ...userHeaders, "Idempotency-Key": `auto-bet-${suffix}` },
-      data: { match_id: createdMatch.id, home_team_goals: 1, away_team_goals: 0, stake_amount: "5.00" },
+      data: { match_id: createdMatch.id, home_team_goals: 0, away_team_goals: 0, stake_amount: "5.00" },
     });
     bet = await response.json().catch(() => undefined);
     return response.status();
@@ -337,6 +337,10 @@ test("ciclo automático inicia e encerra a partida e atualiza o palpite", async 
     const response = await request.get(`/api/bets/${bet.bet_id}`, { headers: userHeaders });
     return response.ok() ? (await response.json()).status : "";
   }, { timeout: 15_000, intervals: [500, 1000] }).toBe("WON");
+  await expect.poll(async () => {
+    const response = await request.get("/api/wallet/me", { headers: userHeaders });
+    return response.ok() ? (await response.json()).balanceCents : -1;
+  }, { timeout: 15_000, intervals: [500, 1000] }).toBe(2000);
 });
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }]) {

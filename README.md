@@ -35,6 +35,13 @@ Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetu
 o painel administrativo, o painel do usuário e a integração via Kafka estão
 implementados. A apuração (com rateio proporcional de bolão) e o pagamento automatizado de prêmios estão 100% funcionais!
 
+Na apuração, somente palpites que acertam o placar final exato são vencedores. O
+bolão formado pelos valores de todos os palpites confirmados é dividido entre
+esses vencedores proporcionalmente ao valor de cada palpite, sem bônus ou prêmio
+mínimo. Se ninguém acertar exatamente, todos os palpites perdem e nenhum prêmio
+é creditado. O rateio opera em centavos e distribui eventuais resíduos pelas
+maiores frações, garantindo que a soma dos prêmios seja igual ao bolão.
+
 ## Serviços
 
 | Serviço | Status | Stack | Porta |

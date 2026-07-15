@@ -423,62 +423,41 @@ def handle_wallet_event(db: Session, event_type: str | None, event: dict[str, An
     bet.updated_at = now()
 
 
-def evaluate_bet(bet: Bet, r_home: int, r_away: int) -> tuple[int, int, int, int]:
-    b_home = bet.home_team_goals
-    b_away = bet.away_team_goals
-    
-    r_diff = r_home - r_away
-    b_diff = b_home - b_away
-    
-    r_tot = r_home + r_away
-    b_tot = b_home + b_away
-    
-    r_out = 1 if r_diff > 0 else (-1 if r_diff < 0 else 0)
-    b_out = 1 if b_diff > 0 else (-1 if b_diff < 0 else 0)
-    
-    c1 = 0 if (b_home == r_home and b_away == r_away) else 1
-    
-    if b_out == r_out:
-        c2 = 0
-        c3 = abs(b_diff - r_diff)
-    elif b_out == 0:
-        c2 = 1
-        c3 = 0
-    else:
-        c2 = 2
-        c3 = abs(b_diff)
-        
-    c4 = abs(b_tot - r_tot)
-    
-    return (c1, c2, c3, c4)
+def allocate_prizes(total_pool: Decimal, winners: list[Bet]) -> dict[str, Decimal]:
+    total_pool_cents = int(total_pool * 100)
+    winner_stakes_cents = {bet.id: int(bet.stake_amount * 100) for bet in winners}
+    total_winner_stake_cents = sum(winner_stakes_cents.values())
+
+    allocated_cents: dict[str, int] = {}
+    remainders: dict[str, int] = {}
+    for bet in winners:
+        numerator = total_pool_cents * winner_stakes_cents[bet.id]
+        allocated_cents[bet.id], remainders[bet.id] = divmod(numerator, total_winner_stake_cents)
+
+    remaining_cents = total_pool_cents - sum(allocated_cents.values())
+    remainder_priority = sorted(winners, key=lambda bet: (-remainders[bet.id], bet.id))
+    for bet in remainder_priority[:remaining_cents]:
+        allocated_cents[bet.id] += 1
+
+    return {bet_id: Decimal(cents) * Decimal("0.01") for bet_id, cents in allocated_cents.items()}
 
 
 def settle_bets(db: Session, match_id: str, final_home: int, final_away: int) -> None:
     bets = db.scalars(select(Bet).where(Bet.match_id == match_id, Bet.status == "CONFIRMED").with_for_update()).all()
     if not bets:
         return
-        
+
     total_pool = sum(bet.stake_amount for bet in bets)
-    
-    best_score = None
-    winners = []
-    
+    winners = [
+        bet for bet in bets
+        if bet.home_team_goals == final_home and bet.away_team_goals == final_away
+    ]
+    prizes = allocate_prizes(total_pool, winners) if winners else {}
+
     for bet in bets:
-        score = evaluate_bet(bet, final_home, final_away)
-        if best_score is None or score < best_score:
-            best_score = score
-            winners = [bet]
-        elif score == best_score:
-            winners.append(bet)
-            
-    winners_stake = sum(w.stake_amount for w in winners)
-    
-    for bet in bets:
-        if bet in winners:
+        if bet.id in prizes:
             bet.status = "WON"
-            share = (total_pool * bet.stake_amount) / winners_stake
-            minimum_prize = bet.stake_amount * Decimal("1.20")
-            prize = max(share, minimum_prize).quantize(Decimal("0.01"))
+            prize = prizes[bet.id]
             bet.won_amount = prize
             enqueue(db, "BET_SETTLED", bet, amount_override=prize)
         else:
