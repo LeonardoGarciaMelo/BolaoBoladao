@@ -193,7 +193,7 @@ def to_bet_response(bet: Bet, snapshot: MatchSnapshot | None) -> BetResponse:
     return BetResponse(
         bet_id=UUID(bet.id), user_id=UUID(bet.user_id), match_id=UUID(bet.match_id),
         home_team_goals=bet.home_team_goals, away_team_goals=bet.away_team_goals,
-        stake_amount=bet.stake_amount, status=display_status(bet, snapshot),
+        stake_amount=bet.stake_amount, won_amount=bet.won_amount, status=display_status(bet, snapshot),
         created_at=as_utc(bet.created_at), updated_at=as_utc(bet.updated_at),
         match=MatchSummary(match_id=UUID(snapshot.match_id), team_home=snapshot.team_home,
                            team_away=snapshot.team_away, scheduled_start=as_utc(snapshot.scheduled_start),
@@ -479,6 +479,7 @@ def settle_bets(db: Session, match_id: str, final_home: int, final_away: int) ->
             share = (total_pool * bet.stake_amount) / winners_stake
             minimum_prize = bet.stake_amount * Decimal("1.20")
             prize = max(share, minimum_prize).quantize(Decimal("0.01"))
+            bet.won_amount = prize
             enqueue(db, "BET_SETTLED", bet, amount_override=prize)
         else:
             bet.status = "LOST"

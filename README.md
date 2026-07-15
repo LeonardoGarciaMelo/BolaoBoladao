@@ -49,18 +49,9 @@ implementados. A apuração (com rateio proporcional de bolão) e o pagamento au
 
 ## Perfis de execução
 
-O projeto roda em 3 perfis, conforme o ambiente disponível (ver §2 do
-enunciado — princípio anti-ambiente: a nota avalia a decisão, não a infra):
+O projeto foi consolidado para rodar exclusivamente no **Perfil A — tudo em Docker**. A nota avalia a decisão arquitetural, e a escolha por containerização total simplifica a infraestrutura e garante reprodutibilidade. 
 
-- **Perfil A — tudo em Docker** (recomendado): banco sobe via
-  `docker-compose.yml`, serviço também containerizado.
-- **Perfil B — restrito/JVM**: sem Docker; aponta para um Postgres já
-  provisionado externamente (local ou compartilhado pela equipe).
-- **Perfil C — conceitual**: sem execução real; apenas compila e roda os
-  testes puramente unitários (sem subir banco).
-
-**Perfil usado na entrega do projeto completo: A**, com fallback para B
-documentado abaixo.
+O banco de dados, brokers (Kafka), serviços, simuladores e interface sobem inteiramente via `docker-compose.yml`, não sendo necessário gerenciar a JVM, serviços externos ou ambientes localmente instalados.
 
 ## Como rodar a plataforma completa
 
@@ -87,10 +78,16 @@ O fluxo é cadastro (`POST /api/auth/register`) → login
 expiração antes de encaminhar a chamada. Access tokens duram uma hora e não há
 refresh token nesta versão.
 
-O Compose cria o primeiro administrador a partir de `.secrets/admin-password`
-e das variáveis `ADMIN_BOOTSTRAP_NAME` e `ADMIN_BOOTSTRAP_USERNAME`. A criação
-é idempotente: reinícios não trocam a senha e uma colisão com usuário comum
-impede o startup. Após o login, `GET /api/auth/me` retorna identidade e roles;
+O Compose cria o primeiro administrador a partir do script `init-secrets`. 
+
+> [!IMPORTANT]  
+> **Para fins de avaliação e apresentação, o usuário administrador padrão é criado com as seguintes credenciais fixas:**
+> - **Login:** `admin`
+> - **Senha:** `admin-boladao`
+> 
+> *Nota: Essa configuração destina-se estritamente à demonstração local. Em produção, as senhas seriam injetadas via Secrets Manager.*
+
+A criação é idempotente: reinícios não trocam a senha e uma colisão com usuário comum impede o startup. Após o login, `GET /api/auth/me` retorna identidade e roles;
 `ADMIN` segue para `/admin` e `USER` para `/partidas`.
 
 A carteira também é acessada exclusivamente com Bearer JWT pelo gateway. O

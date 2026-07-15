@@ -15,7 +15,7 @@ services:
           echo 'Generating secrets...';
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /run/secrets/jwt-private.pem;
           openssl pkey -in /run/secrets/jwt-private.pem -pubout -out /run/secrets/jwt-public.pem;
-          echo -n 'admin' > /run/secrets/admin-password;
+          echo -n 'admin-boladao' > /run/secrets/admin-password;
           openssl rand -hex 32 > /run/secrets/payment-merchant-api-key;
           openssl rand -hex 32 > /run/secrets/payment-webhook-secret;
           openssl rand -hex 64 > /run/secrets/payment-secret-key-base;

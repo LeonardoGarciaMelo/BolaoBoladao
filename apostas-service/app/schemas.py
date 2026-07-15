@@ -29,6 +29,7 @@ class BetResponse(BaseModel):
     home_team_goals: int
     away_team_goals: int
     stake_amount: Decimal
+    won_amount: Decimal | None = None
     status: str
     created_at: datetime
     updated_at: datetime

@@ -27,7 +27,7 @@ import UserShell from "../components/templates/UserShell.astro";
   import { authenticatedFetch } from "../scripts/session";
   import { formatCents } from "../scripts/user";
   import { betStatusLabel } from "../scripts/presentation";
-  type Bet = { bet_id: string; home_team_goals: number; away_team_goals: number; stake_amount: string; status: string; created_at: string; match: { team_home: string; team_away: string; scheduled_start: string; status: string; home_team_goals: number; away_team_goals: number } };
+  type Bet = { bet_id: string; home_team_goals: number; away_team_goals: number; stake_amount: string; won_amount?: string; status: string; created_at: string; match: { team_home: string; team_away: string; scheduled_start: string; status: string; home_team_goals: number; away_team_goals: number } };
   type Page = { items: Bet[]; page: number; size: number; total: number };
   let filter = ""; let page = 0; let total = 0;
   const list = document.querySelector<HTMLElement>("[data-bet-list]"); const state = document.querySelector<HTMLElement>("[data-bet-list-state]"); const more = document.querySelector<HTMLButtonElement>("[data-bet-more]");
@@ -38,6 +38,7 @@ import UserShell from "../components/templates/UserShell.astro";
     const pick = document.createElement("div"); pick.className = "user-bet-card__pick"; const scoreLabel = document.createElement("small"); scoreLabel.textContent = "SEU PALPITE"; const score = document.createElement("b"); score.textContent = `${bet.home_team_goals} × ${bet.away_team_goals}`; pick.append(scoreLabel, score);
     const stake = document.createElement("div"); stake.className = "user-bet-card__stake"; const stakeLabel = document.createElement("small"); stakeLabel.textContent = "VALOR"; const amount = document.createElement("b"); amount.textContent = formatCents(Math.round(Number(bet.stake_amount) * 100)); stake.append(stakeLabel, amount);
     const status = document.createElement("span"); status.className = "user-bet-status"; status.dataset.status = bet.status.toLowerCase(); status.textContent = betStatusLabel(bet.status);
+    if (bet.status === "WON" && bet.won_amount) { status.innerHTML = `GANHOU <strong style="color: var(--lime); margin-left: 0.4rem;">+${formatCents(Math.round(Number(bet.won_amount) * 100))}</strong>`; }
     const created = document.createElement("time"); created.className = "user-bet-card__created"; created.dateTime = bet.created_at; created.textContent = `Criado em ${dateTime.format(new Date(bet.created_at))}`;
     article.append(match, pick, stake, status, created); return article;
   };

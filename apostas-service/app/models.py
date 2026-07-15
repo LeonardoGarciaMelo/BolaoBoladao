@@ -20,6 +20,7 @@ class Bet(Base):
     away_team_goals: Mapped[int] = mapped_column(Integer, nullable=False)
     stake_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="CREATED")
+    won_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
