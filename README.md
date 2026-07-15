@@ -128,6 +128,26 @@ Cadastre os servidores na porta `5432`, usando usuário e senha `bolao`:
 
 O volume `pgadmin_data` preserva os servidores cadastrados entre reinícios.
 
+### Inspecionar o Kafka com Kafbat UI
+
+O mesmo perfil `tools` disponibiliza o Kafbat UI, já configurado para o cluster
+Kafka local:
+
+```bash
+docker compose --profile tools up -d kafbat-ui
+```
+
+Acesse `http://localhost:5051`. O cluster aparece como `bolao-local` e permite
+inspecionar tópicos, mensagens, partições e consumer groups. A porta é publicada
+somente na interface local; a ferramenta possui permissões administrativas e é
+destinada apenas ao ambiente de desenvolvimento.
+
+Para iniciar as duas ferramentas de uma vez:
+
+```bash
+docker compose --profile tools up -d pgadmin kafbat-ui
+```
+
 ## Painel do usuário
 
 Após o login, usuários comuns seguem para `/partidas`. O shell autenticado é

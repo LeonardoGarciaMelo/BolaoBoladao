@@ -287,6 +287,19 @@ services:
       user-db:
         condition: service_healthy
 
+  kafbat-ui:
+    profiles: ["tools"]
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    container_name: bolao-kafbat-ui
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bolao-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "127.0.0.1:5051:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   partidas-test-db:
     profiles: ["test"]
     image: postgres:16-alpine
