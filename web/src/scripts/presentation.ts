@@ -48,6 +48,12 @@ const DEPOSIT_STATUS: Record<string, string> = {
 
 const ACTIVITY_EVENT: Record<string, string> = {
   MATCH_CREATED: "Partida criada",
+  MATCH_STARTED: "Partida iniciada",
+  TEAM_HOME_SCORED: "Gol do mandante",
+  TEAM_AWAY_SCORED: "Gol do visitante",
+  TEAM_HOME_GOAL_ANNULLED: "Gol do mandante anulado",
+  TEAM_AWAY_GOAL_ANNULLED: "Gol do visitante anulado",
+  MATCH_ENDED: "Partida encerrada",
   MATCH_CANCELED: "Partida cancelada",
   ADMIN_CREDIT: "Crédito administrativo",
 };

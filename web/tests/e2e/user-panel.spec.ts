@@ -8,6 +8,8 @@ const match = {
   teamHomeScore: 0,
   teamAwayScore: 0,
   start: new Date(Date.now() + 3_600_000).toISOString(),
+  durationMinutes: 105,
+  expectedEnd: new Date(Date.now() + (3_600_000 + 105 * 60_000)).toISOString(),
   end: null,
   status: "SCHEDULED",
   bettingOpen: true,
@@ -164,6 +166,19 @@ test("diálogo alto usa rolagem interna e fecha com Escape", async ({ page }) =>
   expect(await dialog.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
+});
+
+test("fecha o palpite quando a janela encerra durante a atualização", async ({ page }) => {
+  await mockUserApis(page);
+  let bettingOpen = true;
+  await page.route(`**/api/partidas/${match.id}`, (route) => route.fulfill({
+    json: { ...match, status: bettingOpen ? "SCHEDULED" : "IN_PROGRESS", bettingOpen },
+  }));
+  await page.goto("/partidas");
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  bettingOpen = false;
+  await expect(page.getByRole("dialog")).not.toBeVisible({ timeout: 7_000 });
+  await expect(page.locator("[data-match-notice]")).toHaveText("Palpites encerrados para esta partida");
 });
 
 test("erro inglês da API de palpites é apresentado em português", async ({ page }) => {

@@ -46,9 +46,11 @@ public class AdminMatchResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response create(@Valid CreateMatchRequest request) {
-        Match match = matchService.createMatch(request, UUID.fromString(token.getSubject()));
-        return Response.status(Response.Status.CREATED).entity(MatchMapper.toResponse(match)).build();
+    public Response create(@Valid CreateMatchRequest request,
+                           @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        var result = matchService.createMatch(request, UUID.fromString(token.getSubject()), idempotencyKey);
+        return Response.status(result.created() ? Response.Status.CREATED : Response.Status.OK)
+                .entity(MatchMapper.toResponse(result.match())).build();
     }
 
     @POST
@@ -64,18 +66,30 @@ public class AdminMatchResource {
     }
 
     @POST @Path("/{id}/iniciar")
-    public MatchResponse start(@PathParam("id") UUID id) {
-        return MatchMapper.toResponse(matchService.startMatch(id));
+    public MatchResponse start(@PathParam("id") UUID id,
+                               @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return MatchMapper.toResponse(matchService.startMatch(id, actorId(), idempotencyKey));
     }
 
     @POST @Path("/{id}/gol")
     @Consumes(MediaType.APPLICATION_JSON)
-    public MatchResponse score(@PathParam("id") UUID id, @Valid ScoreEventRequest request) {
-        return MatchMapper.toResponse(matchService.registerScore(id, request));
+    public MatchResponse score(@PathParam("id") UUID id, @Valid ScoreEventRequest request,
+                               @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return MatchMapper.toResponse(matchService.registerScore(id, request, actorId(), idempotencyKey));
+    }
+
+    @POST @Path("/{id}/gol/anular")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public MatchResponse annulScore(@PathParam("id") UUID id, @Valid ScoreEventRequest request,
+                                    @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return MatchMapper.toResponse(matchService.annulScore(id, request, actorId(), idempotencyKey));
     }
 
     @POST @Path("/{id}/encerrar")
-    public MatchResponse end(@PathParam("id") UUID id) {
-        return MatchMapper.toResponse(matchService.endMatch(id));
+    public MatchResponse end(@PathParam("id") UUID id,
+                             @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return MatchMapper.toResponse(matchService.endMatch(id, actorId(), idempotencyKey));
     }
+
+    private UUID actorId() { return UUID.fromString(token.getSubject()); }
 }

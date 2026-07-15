@@ -90,8 +90,20 @@ class CancellationSagaTest(unittest.TestCase):
         main.handle_event(main.settings.kafka_match_topic, {
             **created,
             "event_id": str(uuid4()),
+            "event_type": "TEAM_HOME_GOAL_ANNULLED",
+            "score": {"team_home": 0, "team_away": 0},
+        })
+        main.handle_event(main.settings.kafka_match_topic, {
+            **created,
+            "event_id": str(uuid4()),
+            "event_type": "TEAM_AWAY_SCORED",
+            "score": {"team_home": 0, "team_away": 1},
+        })
+        main.handle_event(main.settings.kafka_match_topic, {
+            **created,
+            "event_id": str(uuid4()),
             "event_type": "MATCH_ENDED",
-            "score": {"team_home": 1, "team_away": 0},
+            "score": {"team_home": 0, "team_away": 1},
         })
 
         with self.sessions() as db:
@@ -99,7 +111,8 @@ class CancellationSagaTest(unittest.TestCase):
             self.assertEqual("Aurora", snapshot.team_home)
             self.assertEqual("Estrela", snapshot.team_away)
             self.assertEqual("FINISHED", snapshot.status)
-            self.assertEqual(1, snapshot.home_team_goals)
+            self.assertEqual(0, snapshot.home_team_goals)
+            self.assertEqual(1, snapshot.away_team_goals)
 
     def test_payment_confirmed_after_cancellation_is_refunded_once(self) -> None:
         bet = self.create_bet("CREATED")

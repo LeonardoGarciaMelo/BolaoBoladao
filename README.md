@@ -83,21 +83,9 @@ interface e encaminha as chamadas sob `/api`. Nenhum dos quatro contextos
 centrais publica porta HTTP no host além do gateway; o simulador externo é a
 exceção local e fica restrito a `127.0.0.1:4000`.
 
-Este incremento altera a identidade dos eventos de Partidas e as projeções
-derivadas em Apostas. Não há backfill dos dados anteriores. Em desenvolvimento,
-recrie somente os dados desses dois serviços e o container efêmero do Kafka;
-os volumes de Usuários, Carteira e pgAdmin são preservados:
-
-```bash
-docker compose --profile tools --profile test down
-docker volume rm bolaoboladao_partidas_db_data bolaoboladao_apostas_db_data
-docker compose up --build -d
-docker compose --profile tools up -d pgadmin
-```
-
-O sistema de depósitos usa migrações incrementais próprias e não exige apagar
-nenhum volume. Em especial, `carteira_db_data`, `user_db_data`,
-`payment_simulator_db_data` e `pgadmin_data` devem ser preservados.
+As alterações de ciclo de vida e depósitos usam migrações incrementais. Não é
+necessário apagar ou recriar volumes; o Flyway preenche duração e horários das
+partidas existentes ao subir a nova versão.
 
 O fluxo é cadastro (`POST /api/auth/register`) → login
 (`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
@@ -237,6 +225,10 @@ mantendo o tópico de desenvolvimento `match-events` livre de dados da suíte.
 | `GET` | `/api/admin/users` | Busca paginada por nome/username |
 | `GET` | `/api/admin/teams` | Autocomplete de times |
 | `GET/POST` | `/api/admin/partidas` | Lista e cria partidas |
+| `POST` | `/api/admin/partidas/{id}/iniciar` | Antecipa o início da partida |
+| `POST` | `/api/admin/partidas/{id}/gol` | Marca gol de `HOME` ou `AWAY` |
+| `POST` | `/api/admin/partidas/{id}/gol/anular` | Anula gol de `HOME` ou `AWAY` |
+| `POST` | `/api/admin/partidas/{id}/encerrar` | Antecipa o encerramento da partida |
 | `POST` | `/api/admin/partidas/{id}/cancel` | Cancela com justificativa e `Idempotency-Key` |
 | `GET` | `/api/admin/partidas/{id}/refunds` | Progresso dos estornos |
 | `POST` | `/api/admin/partidas/{id}/refunds/retry` | Reprocessa estornos que terminaram em `FAILED` |
@@ -246,6 +238,11 @@ mantendo o tópico de desenvolvimento `match-events` livre de dados da suíte.
 
 As mutações antigas de `/api/partidas/**` foram removidas; essa família fica
 somente para leitura autenticada.
+
+Criação e todas as mutações administrativas de partida exigem
+`Idempotency-Key`. A duração aceita 1–300 minutos (padrão 105). O serviço inicia
+e encerra partidas automaticamente a cada segundo; os painéis visíveis se
+atualizam a cada cinco segundos.
 
 ## Estrutura do repositório
 

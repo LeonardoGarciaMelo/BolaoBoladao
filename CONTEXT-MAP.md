@@ -3,7 +3,7 @@
 | Contexto | Responsabilidade | Dados próprios | Relações |
 |---|---|---|---|
 | Usuários | Identidade, credenciais e roles | usuários e hash BCrypt | emite JWT RS256 e fornece busca administrativa sem dados sensíveis |
-| Partidas | Times e ciclo de vida da partida | times, partidas e eventos | publica `MATCH_CANCELED` pelo outbox |
+| Partidas | Times, agenda, placar e ciclo automático da partida | times, partidas e eventos | publica todos os eventos de partida pelo outbox |
 | Apostas | Palpites e coordenação do estorno | palpites, cancelamentos, deduplicação e outbox | consome Partidas/Carteira e publica pedidos de pagamento/estorno |
 | Carteira | Ledger imutável, saldo e coordenação de depósitos | carteiras, lançamentos, solicitações de depósito e outbox | consome pedidos de Apostas, publica resultados financeiros e integra o provedor por HTTP/webhook |
 | Gateway | Borda HTTP, autenticação, autorização e composição | nenhum dado de domínio | valida JWT, encaminha identidade confiável e compõe atividade |
@@ -11,7 +11,7 @@
 
 ```text
 Administrador -> Gateway -> Usuários / Partidas / Carteira
-                            Partidas --MATCH_CANCELED--> Apostas
+                            Partidas --MATCH_CREATED/STARTED/GOLS/ENDED/CANCELED--> Apostas
                             Apostas --BET_REFUND_REQUESTED--> Carteira
                             Carteira --PAYMENT_REFUNDED--> Apostas
                             Carteira --HTTP--> Boladão Pay Sandbox

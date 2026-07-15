@@ -68,25 +68,28 @@ Match
 - id : UUID
 - teamHome, teamAway : Team
 - teamHomeScore, teamAwayScore : Integer
-- start, end : OffsetDateTime (persistido como TIMESTAMPTZ/UTC)
+- start, expectedEnd, startedAt, end : OffsetDateTime (persistido como TIMESTAMPTZ/UTC)
+- durationMinutes : Integer (1..300, padrão 105)
 - status : SCHEDULED | IN_PROGRESS | FINISHED | CANCELED
 
 MatchEvent (histórico interno, append-only)
 - id : Long
 - match : Match
-- eventType : MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED | MATCH_CANCELED
+- eventType : MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | TEAM_HOME_GOAL_ANNULLED | TEAM_AWAY_GOAL_ANNULLED | MATCH_ENDED | MATCH_CANCELED
 - teamHomeScoreAtEvent, teamAwayScoreAtEvent : Integer
+- durationMinutesAtEvent, expectedEndAtEvent, startedAtEvent, endedAtEvent : snapshot temporal
+- commandKey, commandFingerprint : idempotência dos comandos administrativos
 - occurredAt : OffsetDateTime
 ```
 
 ### Máquina de estados da partida
 
 ```
-SCHEDULED ──iniciar──▶ IN_PROGRESS ──encerrar──▶ FINISHED
+SCHEDULED ──horário/iniciar──▶ IN_PROGRESS ──término/encerrar──▶ FINISHED
     │                        │
     └──cancelar──────────────┴──────────────────▶ CANCELED
                              │
-                             └──gol (HOME/AWAY)── (permanece IN_PROGRESS)
+                             └──gol/anular (HOME/AWAY)── (permanece IN_PROGRESS)
 ```
 
 Transições inválidas retornam `409 Conflict` (ver `InvalidMatchStateException`
@@ -95,17 +98,22 @@ e `DomainExceptionMapper`).
 ### Evento de domínio (Kafka)
 
 O `MatchEvent` interno é a fonte de verdade publicada no tópico `match-events`
-pelo transactional outbox:
+pelo transactional outbox. Placar e campos temporais mutáveis são lidos dos
+snapshots do evento, não do estado atual da partida:
 
 ```json
 // tópico: match-events
 {
   "event_id": "uuid-da-partida:sequência-local",
   "match_id": "uuid",
-  "event_type": "MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED | MATCH_CANCELED",
+  "event_type": "MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | TEAM_HOME_GOAL_ANNULLED | TEAM_AWAY_GOAL_ANNULLED | MATCH_ENDED | MATCH_CANCELED",
   "team_home": "nome do mandante",
   "team_away": "nome do visitante",
   "scheduled_start": "2026-07-10T20:00:00Z",
+  "duration_minutes": 105,
+  "expected_end": "2026-07-10T21:45:00Z",
+  "started_at": "2026-07-10T20:00:00Z",
+  "ended_at": null,
   "score": {
     "team_home": 0,
     "team_away": 0
@@ -130,6 +138,11 @@ Para leitura do painel, `GET /partidas/catalog` oferece catálogo ordenado e
 paginado nas views `OPEN`, `LIVE`, `FINISHED` e `CANCELED`. O campo
 `bettingOpen` é derivado no instante da leitura e só é verdadeiro quando a
 partida está `SCHEDULED` e o horário previsto ainda é futuro.
+
+Um scheduler configurável (`MATCH_LIFECYCLE_INTERVAL`, padrão `1s`) consulta
+PostgreSQL e avança partidas vencidas. Cada agregado usa lock pessimista e
+transação independente. Se o serviço recuperar uma partida cujo ciclo inteiro
+venceu, grava `MATCH_STARTED` e depois `MATCH_ENDED`, sem apurar prêmios.
 
 ## Domínio: Carteira/Pagamentos (implementado)
 

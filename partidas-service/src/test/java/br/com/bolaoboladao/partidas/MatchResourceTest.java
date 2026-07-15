@@ -2,6 +2,9 @@ package br.com.bolaoboladao.partidas;
 
 import br.com.bolaoboladao.partidas.cache.MatchCache;
 import br.com.bolaoboladao.partidas.dto.MatchResponse;
+import br.com.bolaoboladao.partidas.repository.MatchRepository;
+import br.com.bolaoboladao.partidas.service.MatchLifecycleScheduler;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.smallrye.jwt.algorithm.SignatureAlgorithm;
@@ -32,6 +35,9 @@ class MatchResourceTest {
     @Inject
     MatchCache matchCache;
 
+    @Inject MatchRepository matchRepository;
+    @Inject MatchLifecycleScheduler lifecycleScheduler;
+
     @ConfigProperty(name = "mp.messaging.outgoing.match-events.topic")
     String matchEventsTopic;
 
@@ -54,6 +60,7 @@ class MatchResourceTest {
 
         String matchId = given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body(body)
                 .when().post("/admin/partidas")
@@ -66,6 +73,7 @@ class MatchResourceTest {
 
         given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/iniciar", matchId)
                 .then()
                 .statusCode(200)
@@ -73,6 +81,7 @@ class MatchResourceTest {
 
         given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body("{\"side\": \"HOME\"}")
                 .when().post("/admin/partidas/{id}/gol", matchId)
@@ -83,6 +92,7 @@ class MatchResourceTest {
 
         given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/encerrar", matchId)
                 .then()
                 .statusCode(200)
@@ -101,6 +111,158 @@ class MatchResourceTest {
     }
 
     @Test
+    void deveAplicarDuracaoPadraoValidarLimitesERepetirCriacao() {
+        String key = UUID.randomUUID().toString();
+        String body = """
+                {"teamHomeName":"Duração A","teamAwayName":"Duração B","start":"%s"}
+                """.formatted(OffsetDateTime.now().plusHours(3));
+
+        String id = given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", key).contentType(ContentType.JSON).body(body)
+                .when().post("/admin/partidas").then().statusCode(201)
+                .body("durationMinutes", equalTo(105)).body("expectedEnd", notNullValue())
+                .extract().path("id");
+
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", key).contentType(ContentType.JSON).body(body)
+                .when().post("/admin/partidas").then().statusCode(200).body("id", equalTo(id));
+
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", key).contentType(ContentType.JSON)
+                .body(body.replace("Duração B", "Duração C"))
+                .when().post("/admin/partidas").then().statusCode(409);
+
+        given().header("Authorization", "Bearer " + adminToken()).contentType(ContentType.JSON).body(body)
+                .when().post("/admin/partidas").then().statusCode(400);
+
+        for (int invalid : new int[]{0, 301}) {
+            given().header("Authorization", "Bearer " + adminToken())
+                    .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(ContentType.JSON)
+                    .body("{\"teamHomeName\":\"Limite A " + invalid + "\",\"teamAwayName\":\"Limite B " + invalid
+                            + "\",\"start\":\"" + OffsetDateTime.now().plusHours(4) + "\",\"durationMinutes\":" + invalid + "}")
+                    .when().post("/admin/partidas").then().statusCode(400);
+        }
+    }
+
+    @Test
+    void deveAnularGolEManterComandosIdempotentes() {
+        String id = createMatch("Anulação A", "Anulação B");
+        String startKey = UUID.randomUUID().toString();
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", startKey)
+                .when().post("/admin/partidas/{id}/iniciar", id).then().statusCode(200)
+                .body("startedAt", notNullValue()).body("expectedEnd", notNullValue());
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", startKey)
+                .when().post("/admin/partidas/{id}/iniciar", id).then().statusCode(200);
+
+        String goalKey = UUID.randomUUID().toString();
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", goalKey)
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol", id).then().statusCode(200).body("teamHomeScore", equalTo(1));
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", goalKey)
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol", id).then().statusCode(200).body("teamHomeScore", equalTo(1));
+
+        String annulKey = UUID.randomUUID().toString();
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", annulKey)
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol/anular", id).then().statusCode(200).body("teamHomeScore", equalTo(0));
+        given().header("Authorization", "Bearer " + adminToken()).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol/anular", id).then().statusCode(409);
+
+        given().when().get("/partidas/{id}/eventos", id).then()
+                .body("findAll { it.eventType == 'MATCH_STARTED' }.size()", equalTo(1))
+                .body("findAll { it.eventType == 'TEAM_HOME_SCORED' }.size()", equalTo(1))
+                .body("findAll { it.eventType == 'TEAM_HOME_GOAL_ANNULLED' }.size()", equalTo(1));
+    }
+
+    @Test
+    void deveBloquearGolNoTerminoPrevistoENoLimiteDoPlacar() {
+        String id = createMatch("Limite Gol A", "Limite Gol B");
+        UUID matchId = UUID.fromString(id);
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .when().post("/admin/partidas/{id}/iniciar", id).then().statusCode(200);
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            var match = matchRepository.findByIdForUpdate(matchId);
+            match.expectedEnd = OffsetDateTime.now().minusSeconds(1);
+        });
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol", id).then().statusCode(409);
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            var match = matchRepository.findByIdForUpdate(matchId);
+            match.expectedEnd = OffsetDateTime.now().plusHours(1);
+            match.teamHomeScore = 99;
+        });
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(ContentType.JSON).body("{\"side\":\"HOME\"}")
+                .when().post("/admin/partidas/{id}/gol", id).then().statusCode(409);
+    }
+
+    @Test
+    void schedulerEAdminConcorrentesNaoDuplicamInicioNemEncerramento() throws Exception {
+        String id = createMatch("Corrida Ciclo A", "Corrida Ciclo B");
+        UUID matchId = UUID.fromString(id);
+        OffsetDateTime due = OffsetDateTime.now();
+        QuarkusTransaction.requiringNew().run(() -> {
+            var match = matchRepository.findByIdForUpdate(matchId);
+            match.start = due.minusSeconds(1);
+            match.expectedEnd = due.plusMinutes(105);
+        });
+
+        int manualStartStatus = runConcurrentTransition(
+                () -> matchService().startDueMatch(matchId, due),
+                "/admin/partidas/{id}/iniciar", id);
+        org.junit.jupiter.api.Assertions.assertTrue(manualStartStatus == 200 || manualStartStatus == 409);
+        given().when().get("/partidas/{id}/eventos", id).then()
+                .body("findAll { it.eventType == 'MATCH_STARTED' }.size()", equalTo(1));
+
+        OffsetDateTime endDue = OffsetDateTime.now();
+        QuarkusTransaction.requiringNew().run(() ->
+                matchRepository.findByIdForUpdate(matchId).expectedEnd = endDue.minusSeconds(1));
+        int manualEndStatus = runConcurrentTransition(
+                () -> matchService().endDueMatch(matchId, endDue),
+                "/admin/partidas/{id}/encerrar", id);
+        org.junit.jupiter.api.Assertions.assertTrue(manualEndStatus == 200 || manualEndStatus == 409);
+        given().when().get("/partidas/{id}/eventos", id).then()
+                .body("findAll { it.eventType == 'MATCH_ENDED' }.size()", equalTo(1));
+    }
+
+    @Test
+    void deveExecutarCatchUpAutomaticoEmOrdemComHorariosPrevistos() {
+        String id = createMatch("Catch-up A", "Catch-up B");
+        UUID matchId = UUID.fromString(id);
+        OffsetDateTime rawStart = OffsetDateTime.now().minusHours(3);
+        OffsetDateTime scheduledStart = rawStart.withNano((rawStart.getNano() / 1_000) * 1_000);
+        OffsetDateTime expectedEnd = scheduledStart.plusMinutes(60);
+        QuarkusTransaction.requiringNew().run(() -> {
+            var match = matchRepository.findByIdForUpdate(matchId);
+            match.start = scheduledStart;
+            match.durationMinutes = 60;
+            match.expectedEnd = expectedEnd;
+        });
+
+        lifecycleScheduler.advanceLifecycle();
+
+        MatchResponse response = given().when().get("/partidas/{id}", id).then().statusCode(200)
+                .body("status", equalTo("FINISHED")).body("durationMinutes", equalTo(60))
+                .extract().as(MatchResponse.class);
+        assertEquals(scheduledStart.toInstant(), response.startedAt().toInstant());
+        assertEquals(expectedEnd.toInstant(), response.end().toInstant());
+        java.util.List<String> eventTypes = given().when().get("/partidas/{id}/eventos", id).then().statusCode(200)
+                .body("findAll { it.eventType == 'MATCH_STARTED' }.size()", equalTo(1))
+                .body("findAll { it.eventType == 'MATCH_ENDED' }.size()", equalTo(1))
+                .extract().jsonPath().getList("eventType", String.class);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                eventTypes.indexOf("MATCH_STARTED") < eventTypes.indexOf("MATCH_ENDED"));
+    }
+
+    @Test
     void naoDeveMarcarGolEmPartidaNaoIniciada() {
         String start = OffsetDateTime.now().plusHours(1).toString();
 
@@ -114,6 +276,7 @@ class MatchResourceTest {
 
         String matchId = given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body(body)
                 .when().post("/admin/partidas")
@@ -123,6 +286,7 @@ class MatchResourceTest {
 
         given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body("{\"side\": \"HOME\"}")
                 .when().post("/admin/partidas/{id}/gol", matchId)
@@ -158,12 +322,15 @@ class MatchResourceTest {
 
         String live = createMatch("Catálogo Ao Vivo A", "Catálogo Ao Vivo B");
         given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/iniciar", live).then().statusCode(200);
 
         String finished = createMatch("Catálogo Encerrada A", "Catálogo Encerrada B");
         given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/iniciar", finished).then().statusCode(200);
         given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/encerrar", finished).then().statusCode(200);
 
         String canceled = createMatch("Catálogo Cancelada A", "Catálogo Cancelada B");
@@ -207,6 +374,7 @@ class MatchResourceTest {
 
         String matchIdStr = given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body(body)
                 .when().post("/admin/partidas")
@@ -234,6 +402,7 @@ class MatchResourceTest {
         // 4. Iniciar a partida (deve invalidar cache e registrar evento)
         given()
                 .header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/iniciar", matchIdStr)
                 .then()
                 .statusCode(200);
@@ -279,8 +448,10 @@ class MatchResourceTest {
 
         String finished = createMatch("Norte", "Sul");
         given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/iniciar", finished).then().statusCode(200);
         given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .when().post("/admin/partidas/{id}/encerrar", finished).then().statusCode(200);
         given().header("Authorization", "Bearer " + adminToken())
                 .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(ContentType.JSON)
@@ -341,6 +512,7 @@ class MatchResourceTest {
 
     private String createMatch(String home, String away) {
         return given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body("{\"teamHomeName\":\"" + home + "\",\"teamAwayName\":\"" + away
                         + "\",\"start\":\"" + OffsetDateTime.now().plusHours(2) + "\"}")
@@ -349,10 +521,32 @@ class MatchResourceTest {
 
     private int createMatchWithToken(String home, String away, String token) {
         return given().header("Authorization", "Bearer " + token)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(ContentType.JSON)
                 .body("{\"teamHomeName\":\"" + home + "\",\"teamAwayName\":\"" + away
                         + "\",\"start\":\"" + OffsetDateTime.now().plusHours(2) + "\"}")
                 .when().post("/admin/partidas").statusCode();
+    }
+
+    private br.com.bolaoboladao.partidas.service.MatchService matchService() {
+        return io.quarkus.arc.Arc.container()
+                .instance(br.com.bolaoboladao.partidas.service.MatchService.class).get();
+    }
+
+    private int runConcurrentTransition(Runnable automatic, String manualPath, String matchId) throws Exception {
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var automaticResult = executor.submit(() -> { start.await(); automatic.run(); return true; });
+            var manualResult = executor.submit(() -> {
+                start.await();
+                return given().header("Authorization", "Bearer " + adminToken())
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
+                        .when().post(manualPath, matchId).statusCode();
+            });
+            start.countDown();
+            org.junit.jupiter.api.Assertions.assertTrue(automaticResult.get());
+            return manualResult.get();
+        }
     }
 
     private String adminToken() {

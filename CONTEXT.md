@@ -2,7 +2,39 @@
 
 ## Administrador
 
-Usuário operacional com role `ADMIN`. O JWT de um administrador contém os grupos `USER` e `ADMIN`. Ele pode criar e cancelar partidas, conceder créditos e consultar auditoria. A interface não promove usuários.
+Usuário operacional com role `ADMIN`. O JWT de um administrador contém os grupos `USER` e `ADMIN`. Ele pode criar, iniciar, atualizar o placar, encerrar e cancelar partidas, conceder créditos e consultar auditoria. A interface não promove usuários.
+
+## Partida
+
+Disputa entre mandante e visitante cujo ciclo é `SCHEDULED → IN_PROGRESS → FINISHED`, ou `CANCELED`. O serviço de Partidas é a fonte de verdade do placar, dos horários e dos eventos; Apostas mantém somente uma projeção.
+
+## Início agendado
+
+Instante `start` informado no cadastro. Fecha a janela de palpites no limite exato e é usado pelo scheduler para iniciar a partida automaticamente.
+
+## Duração prevista
+
+Quantidade configurada de minutos da partida (`durationMinutes`), de 1 a 300 e padrão 105. Não representa prorrogação nem tempo efetivamente jogado.
+
+## Término previsto
+
+Instante `expectedEnd`. No cadastro é `start + durationMinutes`; quando o administrador antecipa o início, passa a ser `startedAt + durationMinutes`.
+
+## Início efetivo
+
+Instante `startedAt` em que a partida passou a `IN_PROGRESS`. No início automático conserva o início agendado; no início manual registra o instante do comando.
+
+## Gol
+
+Incremento de um ponto no placar do mandante ou visitante durante uma partida em andamento e antes do término previsto. O placar de cada time é limitado a 99.
+
+## Gol anulado
+
+Correção que reduz em um o placar de um dos times e emite um evento próprio. Nunca produz placar negativo.
+
+## Encerramento efetivo
+
+Instante `end` em que a partida passou a `FINISHED`. Pode ser o término previsto no fluxo automático ou o instante de um encerramento manual antecipado.
 
 ## Crédito administrativo
 

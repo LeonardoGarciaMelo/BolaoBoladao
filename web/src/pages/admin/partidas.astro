@@ -14,8 +14,10 @@ import AdminShell from "../../components/templates/AdminShell.astro";
           <div class="admin-datetime-fields">
             <label>DATA<input name="startDate" type="date" aria-required="true" /></label>
             <label>HORÁRIO<input name="startTime" type="time" step="60" aria-required="true" /></label>
+            <label>DURAÇÃO (MIN)<input name="durationMinutes" type="number" min="1" max="300" value="105" required /></label>
           </div>
           <p class="admin-form__hint" data-timezone></p>
+          <p class="admin-form__hint" data-end-preview>Informe data, horário e duração para ver o término previsto.</p>
           <p class="admin-form__message" data-match-message role="alert"></p>
           <button class="admin-action" type="submit">CRIAR PARTIDA</button>
         </form>
@@ -34,20 +36,35 @@ import AdminShell from "../../components/templates/AdminShell.astro";
         <div><button value="close" class="admin-secondary">VOLTAR</button><button value="confirm" class="admin-danger">CANCELAR PARTIDA</button></div>
       </form>
     </dialog>
+    <dialog class="admin-dialog" data-command-dialog>
+      <form method="dialog" data-command-form>
+        <span class="admin-dialog__eyebrow">CONFIRMAR AÇÃO</span><h2 data-command-title>Confirmar?</h2>
+        <p data-command-copy></p>
+        <p class="admin-form__message" data-command-message role="alert"></p>
+        <div><button value="close" class="admin-secondary">VOLTAR</button><button value="confirm" class="admin-action">CONFIRMAR</button></div>
+      </form>
+    </dialog>
   </AdminShell>
 </Layout>
 
 <script>
   import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
   import { matchStatusLabel, readApiError, refundStatusLabel } from "../../scripts/presentation";
-  type Match = { id: string; teamHome: string; teamAway: string; start: string; status: string; cancelReason?: string };
+  type Match = { id: string; teamHome: string; teamAway: string; teamHomeScore: number; teamAwayScore: number; start: string; durationMinutes: number; expectedEnd: string; startedAt?: string; end?: string; status: string; cancelReason?: string };
   const list = document.querySelector<HTMLElement>("[data-match-list]");
   const form = document.querySelector<HTMLFormElement>("[data-match-form]");
   const message = document.querySelector<HTMLElement>("[data-match-message]");
   const filter = document.querySelector<HTMLSelectElement>("[data-status-filter]");
   const dialog = document.querySelector<HTMLDialogElement>("[data-cancel-dialog]");
   const cancelForm = document.querySelector<HTMLFormElement>("[data-cancel-form]");
+  const commandDialog = document.querySelector<HTMLDialogElement>("[data-command-dialog]");
+  const commandForm = document.querySelector<HTMLFormElement>("[data-command-form]");
   let selectedMatch: Match | undefined;
+  let selectedCommand: { action: "iniciar" | "encerrar" | "anular"; side?: "HOME" | "AWAY" } | undefined;
+  let loadingMatches = false;
+  let createKey: string | undefined;
+  let cancelKey: string | undefined;
+  const retryKeys = new Map<string, string>();
   const formatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
   document.querySelector<HTMLElement>("[data-timezone]")!.textContent = `Fuso exibido: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
 
@@ -61,14 +78,21 @@ import AdminShell from "../../components/templates/AdminShell.astro";
   };
 
   const loadMatches = async () => {
+    if (loadingMatches) return;
+    loadingMatches = true;
+    try {
     await requireAdmin();
     const status = filter?.value ? `&status=${filter.value}` : "";
     const response = await authenticatedFetch(`/admin/partidas?page=0&size=50${status}`);
+    if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar as partidas."));
     const page = await response.json();
     if (!list) return;
     list.replaceChildren();
     if (!page.items?.length) { const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhuma partida nesta seleção."; list.append(empty); return; }
     for (const match of page.items as Match[]) list.append(renderMatch(match));
+    } catch (error) {
+      if (list) list.innerHTML = `<p class="admin-empty">${error instanceof Error ? error.message : "Não foi possível carregar as partidas."}</p>`;
+    } finally { loadingMatches = false; }
   };
 
   const renderMatch = (match: Match) => {
@@ -76,12 +100,23 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     const status = document.createElement("span"); status.className = `admin-status admin-status--${match.status.toLowerCase()}`; status.textContent = matchStatusLabel(match.status);
     const copy = document.createElement("div");
     const teams = document.createElement("strong"); teams.textContent = `${match.teamHome} × ${match.teamAway}`;
-    const date = document.createElement("time"); date.textContent = formatter.format(new Date(match.start));
-    copy.append(teams, date); row.append(status, copy);
+    const date = document.createElement("time"); date.textContent = `Início previsto: ${formatter.format(new Date(match.start))}`;
+    const expected = document.createElement("time"); expected.textContent = match.status === "FINISHED" && match.end
+      ? `Encerrada em: ${formatter.format(new Date(match.end))}`
+      : `Término previsto: ${formatter.format(new Date(match.expectedEnd))}`;
+    copy.append(teams, date, expected);
+    if (match.status !== "SCHEDULED") { const score = document.createElement("b"); score.className = "admin-live-score"; score.textContent = `${match.teamHomeScore} × ${match.teamAwayScore}`; copy.append(score); }
+    row.append(status, copy);
+    const actions = document.createElement("div"); actions.className = "admin-match-actions";
+    if (match.status === "SCHEDULED") actions.append(actionButton("INICIAR AGORA", () => confirmCommand(match, "iniciar")));
+    if (match.status === "IN_PROGRESS") {
+      actions.append(scoreControl(match, "HOME"), scoreControl(match, "AWAY"));
+      actions.append(actionButton("ENCERRAR AGORA", () => confirmCommand(match, "encerrar")));
+    }
     if (["SCHEDULED", "IN_PROGRESS"].includes(match.status)) {
       const button = document.createElement("button"); button.className = "admin-cancel-trigger"; button.textContent = "CANCELAR";
-      button.addEventListener("click", () => { selectedMatch = match; document.querySelector<HTMLElement>("[data-cancel-match-label]")!.textContent = `${match.teamHome} × ${match.teamAway}`; dialog?.showModal(); });
-      row.append(button);
+      button.addEventListener("click", () => { selectedMatch = match; cancelKey = undefined; document.querySelector<HTMLElement>("[data-cancel-match-label]")!.textContent = `${match.teamHome} × ${match.teamAway}`; dialog?.showModal(); });
+      actions.append(button); row.append(actions);
     } else if (match.status === "CANCELED") {
       const audit = document.createElement("div"); audit.className = "admin-match-refund";
       const reason = document.createElement("small"); reason.textContent = match.cancelReason || "Cancelada";
@@ -96,6 +131,42 @@ import AdminShell from "../../components/templates/AdminShell.astro";
       audit.append(reason, progress, retry); row.append(audit); void pollRefunds(match.id, progress, retry);
     }
     return row;
+  };
+
+  const actionButton = (label: string, handler: () => void) => {
+    const button = document.createElement("button"); button.type = "button"; button.className = "admin-secondary admin-match-action"; button.textContent = label; button.addEventListener("click", handler); return button;
+  };
+  const scoreControl = (match: Match, side: "HOME" | "AWAY") => {
+    const control = document.createElement("div"); control.className = "admin-score-control";
+    const label = document.createElement("span"); label.textContent = side === "HOME" ? match.teamHome : match.teamAway;
+    const minus = actionButton("−", () => confirmCommand(match, "anular", side)); minus.ariaLabel = `Anular gol de ${label.textContent}`; minus.disabled = (side === "HOME" ? match.teamHomeScore : match.teamAwayScore) <= 0;
+    const value = document.createElement("b"); value.textContent = String(side === "HOME" ? match.teamHomeScore : match.teamAwayScore);
+    const plus = actionButton("+", () => void sendCommand(match, "gol", side).catch((error) => {
+      const knownMessage = error instanceof Error && !/fetch|network|load failed/i.test(error.message) ? error.message : undefined;
+      if (message) message.textContent = knownMessage || "Não foi possível adicionar o gol.";
+    })); plus.ariaLabel = `Adicionar gol de ${label.textContent}`; plus.disabled = Number(value.textContent) >= 99;
+    control.append(label, minus, value, plus); return control;
+  };
+  const confirmCommand = (match: Match, action: "iniciar" | "encerrar" | "anular", side?: "HOME" | "AWAY") => {
+    selectedMatch = match; selectedCommand = { action, side };
+    const team = side === "HOME" ? match.teamHome : match.teamAway;
+    document.querySelector<HTMLElement>("[data-command-title]")!.textContent = action === "iniciar" ? "Iniciar partida agora?" : action === "encerrar" ? "Encerrar partida agora?" : "Anular este gol?";
+    document.querySelector<HTMLElement>("[data-command-copy]")!.textContent = action === "anular" ? `O placar de ${team} será reduzido em um gol.` : `${match.teamHome} × ${match.teamAway}`;
+    document.querySelector<HTMLElement>("[data-command-message]")!.textContent = ""; commandDialog?.showModal();
+  };
+  const sendCommand = async (match: Match, action: "iniciar" | "gol" | "anular" | "encerrar", side?: "HOME" | "AWAY") => {
+    if (message) message.textContent = "";
+    const commandId = `${match.id}:${action}:${side || ""}`;
+    const key = retryKeys.get(commandId) || createIdempotencyKey(); retryKeys.set(commandId, key);
+    const path = action === "anular" ? "gol/anular" : action;
+    const options: RequestInit = { method: "POST", headers: { "Idempotency-Key": key } };
+    if (side) { options.headers = { ...options.headers, "Content-Type": "application/json" }; options.body = JSON.stringify({ side }); }
+    const controls = Array.from(document.querySelectorAll<HTMLButtonElement>(".admin-match-actions button")); controls.forEach((item) => item.disabled = true);
+    try {
+      const response = await authenticatedFetch(`/admin/partidas/${match.id}/${path}`, options);
+      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível atualizar a partida."));
+      retryKeys.delete(commandId); await loadMatches();
+    } finally { controls.forEach((item) => item.disabled = false); }
   };
 
   const pollRefunds = async (matchId: string, target: HTMLElement, retry?: HTMLButtonElement) => {
@@ -124,22 +195,52 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     if (!startDate || !startTime) { message.textContent = "Informe a data e o horário da partida."; return; }
     if (!form.reportValidity()) return;
     const localStart = new Date(`${startDate}T${startTime}:00`);
+    const durationMinutes = Number(data.get("durationMinutes"));
     if (Number.isNaN(localStart.valueOf()) || localStart <= new Date()) { message.textContent = "Escolha um horário futuro válido."; return; }
-    const response = await authenticatedFetch("/admin/partidas", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ teamHomeName: data.get("teamHomeName"), teamAwayName: data.get("teamAwayName"), start: localStart.toISOString() }) });
-    message.textContent = response.ok ? "Partida criada e adicionada à agenda." : await readApiError(response, "Não foi possível criar a partida.");
-    if (response.ok) { form.reset(); await loadMatches(); }
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) { message.textContent = "A duração deve ficar entre 1 e 300 minutos."; return; }
+    if (!createKey) createKey = createIdempotencyKey();
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!; submit.disabled = true;
+    try {
+      const response = await authenticatedFetch("/admin/partidas", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createKey }, body: JSON.stringify({ teamHomeName: data.get("teamHomeName"), teamAwayName: data.get("teamAwayName"), start: localStart.toISOString(), durationMinutes }) });
+      message.textContent = response.ok ? "Partida criada e adicionada à agenda." : await readApiError(response, "Não foi possível criar a partida.");
+      if (response.ok) { createKey = undefined; form.reset(); (form.elements.namedItem("durationMinutes") as HTMLInputElement).value = "105"; updateEndPreview(); await loadMatches(); }
+    } catch {
+      message.textContent = "Não foi possível criar a partida. Tente novamente.";
+    } finally { submit.disabled = false; }
+  });
+  form?.addEventListener("input", () => { createKey = undefined; });
+  const updateEndPreview = () => {
+    const data = new FormData(form!); const date = String(data.get("startDate") || ""); const time = String(data.get("startTime") || ""); const duration = Number(data.get("durationMinutes"));
+    const preview = document.querySelector<HTMLElement>("[data-end-preview]")!;
+    if (!date || !time || !Number.isFinite(duration)) { preview.textContent = "Informe data, horário e duração para ver o término previsto."; return; }
+    const end = new Date(new Date(`${date}T${time}:00`).getTime() + duration * 60_000); preview.textContent = `Término previsto: ${formatter.format(end)}`;
+  };
+  form?.querySelectorAll('input[name="startDate"],input[name="startTime"],input[name="durationMinutes"]').forEach((input) => input.addEventListener("input", updateEndPreview));
+  commandForm?.addEventListener("submit", async (event) => {
+    const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null; if (submitter?.value !== "confirm") return;
+    event.preventDefault(); if (!selectedMatch || !selectedCommand) return; submitter.disabled = true;
+    try { await sendCommand(selectedMatch, selectedCommand.action, selectedCommand.side); commandDialog?.close(); selectedCommand = undefined; }
+    catch (error) { document.querySelector<HTMLElement>("[data-command-message]")!.textContent = error instanceof Error ? error.message : "Não foi possível atualizar a partida."; }
+    finally { submitter.disabled = false; }
   });
   cancelForm?.addEventListener("submit", async (event) => {
     const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null;
     if (submitter?.value !== "confirm") return;
     event.preventDefault(); if (!selectedMatch || !cancelForm.reportValidity()) return;
     const reason = String(new FormData(cancelForm).get("reason"));
-    const response = await authenticatedFetch(`/admin/partidas/${selectedMatch.id}/cancel`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ reason }) });
+    if (!cancelKey) cancelKey = createIdempotencyKey(); submitter.disabled = true;
     const cancelMessage = document.querySelector<HTMLElement>("[data-cancel-message]");
-    if (!response.ok) { if (cancelMessage) cancelMessage.textContent = await readApiError(response, "Não foi possível cancelar."); return; }
-    dialog?.close(); cancelForm.reset(); selectedMatch = undefined; await loadMatches();
+    try {
+      const response = await authenticatedFetch(`/admin/partidas/${selectedMatch.id}/cancel`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": cancelKey }, body: JSON.stringify({ reason }) });
+      if (!response.ok) { if (cancelMessage) cancelMessage.textContent = await readApiError(response, "Não foi possível cancelar."); return; }
+      cancelKey = undefined; dialog?.close(); cancelForm.reset(); selectedMatch = undefined; await loadMatches();
+    } catch {
+      if (cancelMessage) cancelMessage.textContent = "Não foi possível cancelar a partida. Tente novamente.";
+    } finally { submitter.disabled = false; }
   });
+  cancelForm?.querySelector("textarea")?.addEventListener("input", () => { cancelKey = undefined; });
   filter?.addEventListener("change", () => void loadMatches());
+  window.setInterval(() => { if (document.visibilityState === "visible") void loadMatches(); }, 5000);
   if (document.querySelector("[data-admin-shell]:not([hidden])")) void loadMatches();
   else window.addEventListener("admin:ready", () => void loadMatches(), { once: true });
 </script>

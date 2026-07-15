@@ -446,6 +446,7 @@ services:
     environment:
       QUARKUS_DATASOURCE_DEVSERVICES_ENABLED: "false"
       QUARKUS_KAFKA_DEVSERVICES_ENABLED: "false"
+      QUARKUS_TEST_PROFILE: test,compose-test
       PARTIDAS_TEST_DB_URL: jdbc:postgresql://partidas-test-db:5432/partidas_test_db
       USER_TEST_DB_URL: jdbc:postgresql://user-test-db:5432/user_test_db
       PARTIDAS_DB_USER: bolao

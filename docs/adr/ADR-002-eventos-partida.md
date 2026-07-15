@@ -11,7 +11,7 @@ comunicação precisa ser assíncrona (critério 2 da rubrica) e não pode
 perder eventos nem duplicá-los de forma que quebre a apuração
 (critério 3 — idempotência).
 
-Hoje, cada transição de partida (`criar`, `iniciar`, `gol`, `encerrar`, `cancelar`) grava um
+Hoje, cada transição de partida (`criar`, `iniciar`, `gol`, `anular gol`, `encerrar`, `cancelar`) grava um
 registro em `match_event` na mesma transação que altera o `match` — essa
 tabela é a fonte de verdade interna e append-only.
 
@@ -61,3 +61,13 @@ de partidas diferentes com a mesma sequência local são processados.
   `match-events` não recebe eventos gerados pela suíte.
 - `MATCH_CANCELED` inclui administrador e justificativa e inicia a saga descrita
   no ADR-004.
+- O ciclo temporal é avançado por um poller PostgreSQL a cada segundo. Cada
+  partida é revalidada sob lock pessimista e em transação própria. Em catch-up,
+  `MATCH_STARTED` é confirmado antes de `MATCH_ENDED`; `occurred_at` registra
+  quando a recuperação foi processada.
+- Criação e comandos administrativos usam `Idempotency-Key`. Chave e impressão
+  SHA-256 ficam no `match_event`: replay idêntico não cria evento e reutilização
+  com outro conteúdo retorna `409`.
+- Duração, término previsto, início efetivo e encerramento efetivo são snapshots
+  do instante do evento no `match_event`; um relay atrasado não publica estado
+  futuro em eventos antigos.
