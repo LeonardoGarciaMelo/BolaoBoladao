@@ -49,6 +49,17 @@ public class Match extends PanacheEntityBase {
     @Column(name = "start_at", nullable = false)
     public OffsetDateTime start;
 
+    @NotNull
+    @Column(name = "duration_minutes", nullable = false)
+    public Integer durationMinutes;
+
+    @NotNull
+    @Column(name = "expected_end_at", nullable = false)
+    public OffsetDateTime expectedEnd;
+
+    @Column(name = "started_at")
+    public OffsetDateTime startedAt;
+
     @Column(name = "end_at")
     public OffsetDateTime end;
 
@@ -61,7 +72,7 @@ public class Match extends PanacheEntityBase {
     @Column(name = "cancel_reason", length = 500)
     public String cancelReason;
 
-    @Column(name = "cancel_idempotency_key", unique = true, length = 100)
+    @Column(name = "cancel_idempotency_key", unique = true, length = 150)
     public String cancelIdempotencyKey;
 
     @NotNull

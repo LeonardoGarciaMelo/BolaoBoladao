@@ -6,9 +6,13 @@ import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class PartidasBackendStub implements BeforeAllCallback, AfterAllCallback {
     private HttpServer server;
+    final AtomicReference<String> lastPath = new AtomicReference<>();
+    final AtomicReference<String> lastIdempotencyKey = new AtomicReference<>();
+    final AtomicReference<String> lastAuthenticatedUser = new AtomicReference<>();
 
     @Override
     public void beforeAll(ExtensionContext context) throws Exception {
@@ -20,8 +24,15 @@ public class PartidasBackendStub implements BeforeAllCallback, AfterAllCallback 
             exchange.close();
         });
         server.createContext("/admin/partidas", exchange -> {
+            lastPath.set(exchange.getRequestURI().getPath());
+            lastIdempotencyKey.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+            lastAuthenticatedUser.set(exchange.getRequestHeaders().getFirst("X-Authenticated-User-Id"));
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            byte[] body = "{\"items\":[],\"page\":0,\"size\":20,\"total\":0}".getBytes();
+            byte[] body = ("GET".equals(exchange.getRequestMethod())
+                    ? "{\"items\":[],\"page\":0,\"size\":20,\"total\":0}"
+                    : "{\"status\":\"IN_PROGRESS\",\"observedPath\":\"" + exchange.getRequestURI().getPath()
+                      + "\",\"observedKey\":\"" + exchange.getRequestHeaders().getFirst("Idempotency-Key")
+                      + "\",\"observedUser\":\"" + exchange.getRequestHeaders().getFirst("X-Authenticated-User-Id") + "\"}").getBytes();
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();

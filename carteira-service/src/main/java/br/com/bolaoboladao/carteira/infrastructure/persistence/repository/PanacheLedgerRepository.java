@@ -58,6 +58,11 @@ public class PanacheLedgerRepository implements LedgerRepository, PanacheReposit
     }
 
     @Override
+    public Uni<Long> countByWalletId(UUID walletId) {
+        return count("walletId", walletId);
+    }
+
+    @Override
     public Uni<Ledger> findByIdempotencyKey(String idempotencyKey) {
         return find("idempotencyKey", idempotencyKey).firstResult()
                 .onItem().ifNotNull().transform(this::toDomain);

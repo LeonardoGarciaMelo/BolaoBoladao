@@ -216,3 +216,5 @@ $RECYCLE.BIN/
 
 guia-apresentacao.md
 .pnpm-store/
+__pycache__/
+*.py[cod]

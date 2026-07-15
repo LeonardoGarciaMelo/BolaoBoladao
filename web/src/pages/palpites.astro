@@ -1,0 +1,56 @@
+---
+import Layout from "../layouts/Layout.astro";
+import UserShell from "../components/templates/UserShell.astro";
+---
+
+<Layout title="Meus palpites | Bolão Boladão">
+  <UserShell active="bets" eyebrow="SUA JORNADA" title="Meus palpites">
+    <section class="user-toolbar" aria-label="Filtros de palpites">
+      <div class="user-filter-group" data-bet-filters>
+        <button type="button" data-status="" aria-pressed="true">TODOS</button>
+        <button type="button" data-status="PROCESSING" aria-pressed="false">PROCESSANDO</button>
+        <button type="button" data-status="CONFIRMED" aria-pressed="false">CONFIRMADOS</button>
+        <button type="button" data-status="AWAITING_SETTLEMENT" aria-pressed="false">AGUARDANDO APURAÇÃO</button>
+        <button type="button" data-status="WON" aria-pressed="false">GANHOU</button>
+        <button type="button" data-status="LOST" aria-pressed="false">PERDEU</button>
+        <button type="button" data-status="CANCELING,REFUNDING,CANCELED,REFUND_FAILED" aria-pressed="false">CANCELADOS / ESTORNANDO</button>
+        <button type="button" data-status="PAYMENT_REFUSED" aria-pressed="false">RECUSADOS</button>
+      </div>
+    </section>
+    <section class="user-bet-list" data-bet-list aria-live="polite"></section>
+    <div class="user-list-state" data-bet-list-state>Carregando seus palpites…</div>
+    <button class="user-load-more" type="button" data-bet-more hidden>CARREGAR MAIS</button>
+  </UserShell>
+</Layout>
+
+<script>
+  import { authenticatedFetch } from "../scripts/session";
+  import { formatCents } from "../scripts/user";
+  import { betStatusLabel } from "../scripts/presentation";
+  type Bet = { bet_id: string; home_team_goals: number; away_team_goals: number; stake_amount: string; status: string; created_at: string; match: { team_home: string; team_away: string; scheduled_start: string; status: string; home_team_goals: number; away_team_goals: number } };
+  type Page = { items: Bet[]; page: number; size: number; total: number };
+  let filter = ""; let page = 0; let total = 0;
+  const list = document.querySelector<HTMLElement>("[data-bet-list]"); const state = document.querySelector<HTMLElement>("[data-bet-list-state]"); const more = document.querySelector<HTMLButtonElement>("[data-bet-more]");
+  const dateTime = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" });
+  const renderBet = (bet: Bet) => {
+    const article = document.createElement("article"); article.className = "user-bet-card";
+    const match = document.createElement("div"); match.className = "user-bet-card__match"; const teams = document.createElement("strong"); teams.textContent = `${bet.match.team_home} × ${bet.match.team_away}`; const kickoff = document.createElement("time"); kickoff.dateTime = bet.match.scheduled_start; kickoff.textContent = dateTime.format(new Date(bet.match.scheduled_start)); match.append(teams, kickoff);
+    const pick = document.createElement("div"); pick.className = "user-bet-card__pick"; const scoreLabel = document.createElement("small"); scoreLabel.textContent = "SEU PALPITE"; const score = document.createElement("b"); score.textContent = `${bet.home_team_goals} × ${bet.away_team_goals}`; pick.append(scoreLabel, score);
+    const stake = document.createElement("div"); stake.className = "user-bet-card__stake"; const stakeLabel = document.createElement("small"); stakeLabel.textContent = "VALOR"; const amount = document.createElement("b"); amount.textContent = formatCents(Math.round(Number(bet.stake_amount) * 100)); stake.append(stakeLabel, amount);
+    const status = document.createElement("span"); status.className = "user-bet-status"; status.dataset.status = bet.status.toLowerCase(); status.textContent = betStatusLabel(bet.status);
+    const created = document.createElement("time"); created.className = "user-bet-card__created"; created.dateTime = bet.created_at; created.textContent = `Criado em ${dateTime.format(new Date(bet.created_at))}`;
+    article.append(match, pick, stake, status, created); return article;
+  };
+  const load = async (append = false) => {
+    if (!append) { page = 0; list?.replaceChildren(); } if (state) { state.hidden = false; state.textContent = "Carregando seus palpites…"; }
+    try {
+      const query = new URLSearchParams({ page: String(page), size: "10" }); if (filter) query.set("status", filter);
+      const response = await authenticatedFetch(`/bets?${query}`); if (!response.ok) throw new Error("Não foi possível carregar seus palpites.");
+      const result = await response.json() as Page; total = result.total; result.items.forEach((bet) => list?.append(renderBet(bet)));
+      const count = list?.children.length || 0; if (state) { state.hidden = count > 0; state.innerHTML = count ? "" : 'Você ainda não fez palpites. <a href="/partidas">Ver partidas abertas</a>'; } if (more) more.hidden = count >= total;
+    } catch (error) { if (state) { state.hidden = false; state.textContent = error instanceof Error ? error.message : "Erro inesperado."; } }
+  };
+  document.querySelectorAll<HTMLButtonElement>("[data-status]").forEach((button) => button.addEventListener("click", () => { filter = button.dataset.status || ""; document.querySelectorAll<HTMLButtonElement>("[data-status]").forEach((item) => item.setAttribute("aria-pressed", String(item === button))); void load(); }));
+  more?.addEventListener("click", () => { page += 1; void load(true); });
+  const start = () => void load(); if (document.querySelector("[data-user-shell]:not([hidden])")) start(); else window.addEventListener("user:ready", start, { once: true });
+</script>

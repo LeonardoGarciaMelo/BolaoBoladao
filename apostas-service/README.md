@@ -1,6 +1,8 @@
 # apostas-service
 
-Python microservice responsible for receiving user bets and publishing `BET_CREATED` events to Kafka.
+Serviço FastAPI responsável pelos palpites individuais. Ele projeta as
+partidas a partir do Kafka, valida a janela de palpites, publica pedidos de
+débito e acompanha confirmação, recusa e estorno.
 
 ## Stack
 
@@ -21,6 +23,7 @@ Python microservice responsible for receiving user bets and publishing `BET_CREA
 Headers:
 
 - `X-Authenticated-User-Id: <uuid>`
+- `Idempotency-Key: <chave opaca>`
 
 Body:
 
@@ -43,10 +46,39 @@ Response `201`:
   "home_team_goals": 2,
   "away_team_goals": 1,
   "stake_amount": "25.00",
-  "status": "CREATED",
-  "created_at": "2026-07-14T20:00:00Z"
+  "status": "PROCESSING",
+  "created_at": "2026-07-14T20:00:00Z",
+  "updated_at": "2026-07-14T20:00:00Z",
+  "match": {
+    "match_id": "11111111-1111-1111-1111-111111111111",
+    "team_home": "Aurora",
+    "team_away": "Estrela",
+    "scheduled_start": "2026-07-15T20:00:00Z",
+    "status": "SCHEDULED",
+    "home_team_goals": 0,
+    "away_team_goals": 0
+  }
 }
 ```
+
+A mesma chave com o mesmo payload retorna o registro original. A mesma chave
+com payload diferente retorna `409`; outra chave permite criar outro palpite,
+mesmo que o placar e o valor sejam idênticos. A partida deve existir na
+projeção, permanecer `SCHEDULED` e ter horário futuro. O valor mínimo é R$ 1,00.
+
+### `GET /bets?status=&page=0&size=10`
+
+Lista os palpites do usuário autenticado, do mais recente para o mais antigo.
+O filtro aceita um ou mais estados separados por vírgula.
+
+### `GET /bets/{id}`
+
+Consulta um único palpite e retorna `404` quando ele não pertence ao usuário.
+
+Os estados apresentados são `PROCESSING`, `CONFIRMED`,
+`WON`, `LOST`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
+e `REFUND_FAILED`. `WON` e `LOST` são gerados na apuração quando a partida encerra,
+juntamente com o envio do prêmio correspondente para a carteira do usuário no caso de vitória.
 
 Published Kafka event:
 

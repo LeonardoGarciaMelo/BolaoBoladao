@@ -7,6 +7,7 @@
 </section>
 
 <script>
+  import { matchStatusLabel } from "../../scripts/presentation";
   import { apiBaseUrl } from "../../scripts/session";
 
   type Highlight = {
@@ -58,7 +59,6 @@
   };
 
   const liveStatuses = new Set(["LIVE", "IN_PROGRESS"]);
-  const statusLabel = (status: string) => ({ LIVE: "AO VIVO", IN_PROGRESS: "AO VIVO", SCHEDULED: "EM BREVE", FINISHED: "ENCERRADA", CANCELED: "CANCELADA" }[status] ?? status);
   const timeLabel = (start: string) => new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(start));
   const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 
@@ -67,7 +67,7 @@
     item.className = "match-teaser";
     item.dataset.matchId = highlight.matchId;
     const header = document.createElement("header");
-    const status = text("span", statusLabel(highlight.status));
+    const status = text("span", matchStatusLabel(highlight.status));
     if (liveStatuses.has(highlight.status)) status.classList.add("match-teaser__live");
     header.append(status, text("time", timeLabel(highlight.start)));
 

@@ -35,6 +35,38 @@ public class LedgerSchemaMigration {
                                 ALTER TABLE wallet ADD CONSTRAINT uq_wallet_user_id UNIQUE (userid);
                             END IF;
                         END $$
+                        """))
+                .flatMap(ignoredResult -> apply(connection, "003-deposit-requests", """
+                        CREATE TABLE IF NOT EXISTS deposit_request (
+                            id UUID PRIMARY KEY,
+                            user_id UUID NOT NULL,
+                            amount_cents BIGINT NOT NULL,
+                            status VARCHAR(20) NOT NULL,
+                            idempotency_key VARCHAR(200) NOT NULL,
+                            provider_charge_id UUID,
+                            checkout_url VARCHAR(2048),
+                            expires_at TIMESTAMPTZ,
+                            created_at TIMESTAMPTZ NOT NULL,
+                            updated_at TIMESTAMPTZ NOT NULL,
+                            confirmed_at TIMESTAMPTZ
+                        );
+                        DO $$ BEGIN
+                            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'deposit_amount_positive') THEN
+                                ALTER TABLE deposit_request ADD CONSTRAINT deposit_amount_positive CHECK (amount_cents > 0);
+                            END IF;
+                            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'deposit_status_check') THEN
+                                ALTER TABLE deposit_request ADD CONSTRAINT deposit_status_check
+                                    CHECK (status IN ('CREATING','PENDING','CONFIRMED','REFUSED','EXPIRED'));
+                            END IF;
+                            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'deposit_user_idempotency_unique') THEN
+                                ALTER TABLE deposit_request ADD CONSTRAINT deposit_user_idempotency_unique UNIQUE (user_id, idempotency_key);
+                            END IF;
+                            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'deposit_provider_charge_unique') THEN
+                                ALTER TABLE deposit_request ADD CONSTRAINT deposit_provider_charge_unique UNIQUE (provider_charge_id);
+                            END IF;
+                        END $$;
+                        CREATE INDEX IF NOT EXISTS idx_deposit_user_created
+                            ON deposit_request(user_id, created_at DESC)
                         """)))
                 .await().indefinitely();
     }

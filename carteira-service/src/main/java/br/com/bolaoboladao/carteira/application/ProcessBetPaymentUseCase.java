@@ -61,10 +61,22 @@ public class ProcessBetPaymentUseCase {
 
     @WithTransaction
     public Uni<Void> executeBetSettled(UUID betId, UUID userId, BigDecimal amount) {
-        return findAndLockWalletOrThrow(userId)
-                .flatMap(wallet -> recordLedgerEntry(wallet.id(), Ledger.Reason.WIN, Ledger.Operation.CREDIT, amount)
-                        .flatMap(ignore -> walletCache.invalidateBalance(userId))
-                        .flatMap(ignore -> walletCache.invalidateStatement(wallet.id())));
+        String idempotencyKey = "bet-settled:" + betId;
+        return ledgerRepository.lockIdempotencyKey(idempotencyKey)
+                .flatMap(ignored -> ledgerRepository.findByIdempotencyKey(idempotencyKey))
+                .flatMap(existing -> {
+                    if (existing != null) {
+                        return Uni.createFrom().voidItem();
+                    }
+                    return findAndLockWalletOrThrow(userId)
+                            .flatMap(wallet -> getWalletBalanceUseCase.calculateBalanceFromDatabase(userId)
+                                    .flatMap(currentBalance -> ledgerRepository.save(new Ledger(
+                                            UUID.randomUUID(), wallet.id(), Ledger.Reason.WIN,
+                                            Ledger.Operation.CREDIT, amount, LocalDateTime.now(), betId, null,
+                                            "Prêmio de aposta ganha", idempotencyKey, currentBalance, currentBalance.add(amount)
+                                    )).flatMap(ignore -> walletCache.invalidateBalance(userId))
+                                            .flatMap(ignore -> walletCache.invalidateStatement(wallet.id()))));
+                });
     }
 
     @WithTransaction

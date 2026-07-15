@@ -1,0 +1,98 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+const qrMatrix = [
+  "1111111010000111101111111", "1000001010011100101000001", "1011101011001000001011101",
+  "1011101011100010101011101", "1011101001101101001011101", "1000001011100110101000001",
+  "1111111010101010101111111", "0000000000110011000000000", "1100111000100000000101111",
+  "0111100010000101100011010", "0100001111111111101101100", "0010110001000010101010110",
+  "0101011110001010011001111", "1100100111110101110010010", "0000011001010011100111100",
+  "0011010011110000000110110", "1101101101010001111111100", "0000000011100100100010000",
+  "1111111000111110101010000", "1000001011001011100011110", "1011101011001010111111110",
+  "1011101000010001011100111", "1011101001111000101001010", "1000001011001010000111110",
+  "1111111010100101001000111",
+];
+const modules = qrMatrix.flatMap((row, y) => [...row].map((value, x) => value === "1" ? { x, y } : null).filter(Boolean));
+---
+
+<Layout title="Boladão Pay — Sandbox">
+  <main class="payment-page">
+    <section class="payment-card" aria-labelledby="payment-title">
+      <header class="payment-brand"><span>BP</span><div><strong>Boladão Pay</strong><small>Sandbox</small></div></header>
+      <div class="payment-loading" data-payment-loading aria-live="polite">Carregando cobrança…</div>
+      <div data-payment-content hidden>
+        <p class="payment-eyebrow">PIX FICTÍCIO</p>
+        <h1 id="payment-title">Finalize seu depósito</h1>
+        <strong class="payment-amount" data-payment-amount>R$ 0,00</strong>
+        <p class="payment-countdown">Expira em <b data-payment-countdown>15:00</b></p>
+        <div class="payment-qr" aria-label="QR code PIX fictício">
+          <svg viewBox="-1 -1 27 27" role="img" aria-label="QR code com link fictício"><rect x="-1" y="-1" width="27" height="27" fill="white" />{modules.map((module) => <rect x={module?.x} y={module?.y} width="1" height="1" fill="#071020" />)}</svg>
+        </div>
+        <div class="payment-copy"><code data-payment-code>https://youtu.be/dQw4w9WgXcQ</code><button type="button" data-copy-code>COPIAR</button></div>
+        <p class="payment-warning">Ambiente fictício: nenhum valor real será cobrado. O QR code e o copia-e-cola são apenas uma brincadeira e não alteram o resultado.</p>
+        <div class="payment-simulations" data-payment-actions>
+          <button class="user-primary-action" type="button" data-outcome="PAID">SIMULAR PAGAMENTO</button>
+          <button class="user-secondary-action" type="button" data-outcome="REFUSED">SIMULAR RECUSA</button>
+          <button class="payment-expire" type="button" data-outcome="EXPIRED">SIMULAR EXPIRAÇÃO</button>
+        </div>
+        <p class="user-form-message" data-payment-message aria-live="polite"></p>
+        <div class="payment-result" data-payment-result hidden aria-live="polite"><strong data-payment-result-title></strong><p data-payment-result-copy></p><a class="user-primary-action" data-payment-return href="/carteira">VOLTAR À CARTEIRA</a></div>
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<script define:vars={{ providerBase: import.meta.env.PUBLIC_PAYMENT_PROVIDER_URL || "http://localhost:4000/api/v1" }}>
+  const token = window.location.hash.slice(1);
+  const networkProviderBase = window.location.hostname === "api-gateway"
+    ? providerBase.replace("localhost:4000", "payment-simulator:4000")
+    : providerBase;
+  if (token) history.replaceState(null, "", window.location.pathname);
+  const headers = { Authorization: `Checkout ${token}`, "Content-Type": "application/json" };
+  const loading = document.querySelector("[data-payment-loading]");
+  const content = document.querySelector("[data-payment-content]");
+  const actions = document.querySelector("[data-payment-actions]");
+  const resultBox = document.querySelector("[data-payment-result]");
+  const message = document.querySelector("[data-payment-message]");
+  let charge;
+  let timer;
+  const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const labels = { PAID: ["Pagamento confirmado", "Seu provedor confirmou o pagamento fictício."], REFUSED: ["Pagamento recusado", "A cobrança fictícia foi recusada."], EXPIRED: ["Cobrança expirada", "O prazo desta cobrança fictícia terminou."] };
+  const showResult = (status) => {
+    clearInterval(timer); actions.hidden = true; resultBox.hidden = false;
+    document.querySelector("[data-payment-result-title]").textContent = labels[status]?.[0] || "Cobrança atualizada";
+    document.querySelector("[data-payment-result-copy]").textContent = `${labels[status]?.[1] || "O resultado foi registrado."} Você será levado à Carteira em 3 segundos.`;
+    const link = document.querySelector("[data-payment-return]"); const destination = new URL(charge.returnUrl || "/carteira", window.location.href); if (window.location.hostname === "api-gateway" && destination.hostname === "localhost" && destination.port === "8080") { destination.protocol = window.location.protocol; destination.host = window.location.host; } link.href = destination.toString();
+    setTimeout(() => window.location.assign(link.href), 3000);
+  };
+  const updateCountdown = () => {
+    const remaining = Math.max(0, Math.ceil((new Date(charge.expiresAt).getTime() - Date.now()) / 1000));
+    const minutes = String(Math.floor(remaining / 60)).padStart(2, "0"); const seconds = String(remaining % 60).padStart(2, "0");
+    document.querySelector("[data-payment-countdown]").textContent = `${minutes}:${seconds}`;
+    if (!remaining && charge.status === "PENDING") showResult("EXPIRED");
+  };
+  const initializeCheckout = async () => {
+    try {
+      if (!token) throw new Error("Token de pagamento ausente.");
+      const response = await fetch(`${networkProviderBase}/checkout`, { headers });
+      if (!response.ok) throw new Error("Não foi possível abrir esta cobrança.");
+      charge = await response.json(); loading.hidden = true; content.hidden = false;
+      document.querySelector("[data-payment-amount]").textContent = money.format(charge.amountCents / 100);
+      if (charge.status !== "PENDING") showResult(charge.status); else { updateCountdown(); timer = setInterval(updateCountdown, 1000); }
+    } catch (error) { loading.textContent = error instanceof Error ? error.message : "Não foi possível abrir esta cobrança."; }
+  };
+  void initializeCheckout();
+  document.querySelector("[data-copy-code]")?.addEventListener("click", async (event) => { await navigator.clipboard.writeText("https://youtu.be/dQw4w9WgXcQ"); event.currentTarget.textContent = "COPIADO"; });
+  document.querySelectorAll("[data-outcome]").forEach((button) => button.addEventListener("click", async () => {
+    actions.querySelectorAll("button").forEach((item) => item.disabled = true);
+    if (message) message.textContent = "Registrando a simulação…";
+    try {
+      const response = await fetch(`${networkProviderBase}/checkout/simulate`, { method: "POST", headers, body: JSON.stringify({ outcome: button.dataset.outcome }) });
+      if (!response.ok) throw new Error();
+      charge = await response.json(); if (message) message.textContent = ""; showResult(charge.status);
+    } catch {
+      actions.querySelectorAll("button").forEach((item) => item.disabled = false);
+      if (message) message.textContent = "Não foi possível registrar a simulação. Tente novamente.";
+    }
+  }));
+</script>

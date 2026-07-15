@@ -33,7 +33,7 @@ Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetu
 
 **Status atual:** Partidas, Usuários, Carteira/Pagamentos, Apostas, API Gateway,
 o painel administrativo, o painel do usuário e a integração via Kafka estão
-implementados. A apuração e o pagamento de prêmios continuam fora do escopo.
+implementados. A apuração (com rateio proporcional de bolão) e o pagamento automatizado de prêmios estão 100% funcionais!
 
 ## Serviços
 
