@@ -1,0 +1,21 @@
+---
+import Layout from "../layouts/Layout.astro";
+import UserShell from "../components/templates/UserShell.astro";
+---
+
+<Layout title="Perfil | Bolão Boladão">
+  <UserShell active="profile" eyebrow="SUA CONTA" title="Perfil">
+    <section class="profile-card">
+      <div class="profile-avatar" data-profile-initials>U</div>
+      <div class="profile-identity"><small>IDENTIDADE DO JOGADOR</small><h2 data-profile-name>Usuário</h2><p data-profile-username>@usuario</p></div>
+      <dl class="profile-details"><div><dt>Nome</dt><dd data-profile-detail-name>—</dd></div><div><dt>Usuário</dt><dd data-profile-detail-username>—</dd></div><div><dt>Tipo da conta</dt><dd data-profile-role>USUÁRIO</dd></div></dl>
+      <p class="profile-readonly">Seus dados são apenas para consulta nesta versão.</p>
+    </section>
+  </UserShell>
+</Layout>
+
+<script>
+  import { getCurrentUser, type SessionUser } from "../scripts/session";
+  const render = (user: SessionUser) => { const initials = user.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U"; document.querySelector<HTMLElement>("[data-profile-initials]")!.textContent = initials; document.querySelector<HTMLElement>("[data-profile-name]")!.textContent = user.name; document.querySelector<HTMLElement>("[data-profile-username]")!.textContent = `@${user.username}`; document.querySelector<HTMLElement>("[data-profile-detail-name]")!.textContent = user.name; document.querySelector<HTMLElement>("[data-profile-detail-username]")!.textContent = `@${user.username}`; document.querySelector<HTMLElement>("[data-profile-role]")!.textContent = user.roles.includes("ADMIN") ? "ADMINISTRADOR" : "USUÁRIO"; };
+  const start = async () => render(await getCurrentUser()); if (document.querySelector("[data-user-shell]:not([hidden])")) void start(); else window.addEventListener("user:ready", (event) => render((event as CustomEvent<{ user: SessionUser }>).detail.user), { once: true });
+</script>

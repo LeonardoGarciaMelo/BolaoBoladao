@@ -9,7 +9,17 @@ class BetCreateRequest(BaseModel):
     match_id: UUID
     home_team_goals: int = Field(ge=0, le=30)
     away_team_goals: int = Field(ge=0, le=30)
-    stake_amount: Decimal = Field(gt=Decimal("0"), max_digits=12, decimal_places=2)
+    stake_amount: Decimal = Field(ge=Decimal("1.00"), max_digits=12, decimal_places=2)
+
+
+class MatchSummary(BaseModel):
+    match_id: UUID
+    team_home: str
+    team_away: str
+    scheduled_start: datetime
+    status: str
+    home_team_goals: int
+    away_team_goals: int
 
 
 class BetResponse(BaseModel):
@@ -21,6 +31,15 @@ class BetResponse(BaseModel):
     stake_amount: Decimal
     status: str
     created_at: datetime
+    updated_at: datetime
+    match: MatchSummary
+
+
+class BetPageResponse(BaseModel):
+    items: list[BetResponse]
+    page: int
+    size: int
+    total: int
 
 
 class BetCreatedEvent(BaseModel):

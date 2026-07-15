@@ -48,6 +48,20 @@ class CarteiraGatewaySecurityTest {
                 .statusCode(403);
     }
 
+    @Test
+    void deveEncaminharChaveIdempotenteEIgnorarIdentidadeForjadaNoDeposito() throws Exception {
+        given()
+                .header("Authorization", "Bearer " + token())
+                .header("X-Authenticated-User-Id", "forged")
+                .header("Idempotency-Key", "deposit-key")
+                .contentType("application/json")
+                .body("{\"amountCents\":5000}")
+                .when().post("/api/wallet/me/deposits")
+                .then()
+                .statusCode(201)
+                .body("status", equalTo("PENDING"));
+    }
+
     private String token() throws Exception {
         return Jwt.issuer("bolao-user-service")
                 .audience("bolao-api")

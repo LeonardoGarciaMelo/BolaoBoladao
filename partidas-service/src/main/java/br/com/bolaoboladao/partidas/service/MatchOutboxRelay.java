@@ -33,9 +33,16 @@ public class MatchOutboxRelay {
 
     public record ScoreDto(Integer team_home, Integer team_away) {}
     public record MatchDomainEvent(
-            Long event_id, // Identificador único do evento para deduplicação no consumidor
+            String event_id, // Identificador global e estável para deduplicação no consumidor
             UUID match_id,
             String event_type,
+            String team_home,
+            String team_away,
+            OffsetDateTime scheduled_start,
+            Integer duration_minutes,
+            OffsetDateTime expected_end,
+            OffsetDateTime started_at,
+            OffsetDateTime ended_at,
             ScoreDto score,
             OffsetDateTime occurred_at,
             UUID actor_id,
@@ -58,16 +65,7 @@ public class MatchOutboxRelay {
         for (MatchEvent event : pendingEvents) {
             try {
                 // 2. Mapeamento para o DTO do evento de domínio
-                ScoreDto score = new ScoreDto(event.teamHomeScoreAtEvent, event.teamAwayScoreAtEvent);
-                MatchDomainEvent payload = new MatchDomainEvent(
-                        event.id,
-                        event.match.id,
-                        event.eventType.name(),
-                        score,
-                        event.occurredAt,
-                        event.actorId,
-                        event.reason
-                );
+                MatchDomainEvent payload = toDomainEvent(event);
 
                 // 3. Monta o metadado Kafka para usar a partida como chave (garante ordenação no mesmo tópico/partição)
                 OutgoingKafkaRecordMetadata<String> metadata = OutgoingKafkaRecordMetadata.<String>builder()
@@ -106,5 +104,24 @@ public class MatchOutboxRelay {
                 break;
             }
         }
+    }
+
+    static MatchDomainEvent toDomainEvent(MatchEvent event) {
+        return new MatchDomainEvent(
+                event.match.id + ":" + event.id,
+                event.match.id,
+                event.eventType.name(),
+                event.match.teamHome.name,
+                event.match.teamAway.name,
+                event.match.start,
+                event.durationMinutesAtEvent,
+                event.expectedEndAtEvent,
+                event.startedAtEvent,
+                event.endedAtEvent,
+                new ScoreDto(event.teamHomeScoreAtEvent, event.teamAwayScoreAtEvent),
+                event.occurredAt,
+                event.actorId,
+                event.reason
+        );
     }
 }

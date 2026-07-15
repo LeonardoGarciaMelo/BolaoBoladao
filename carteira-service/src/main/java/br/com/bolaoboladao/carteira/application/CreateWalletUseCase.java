@@ -20,14 +20,15 @@ public class CreateWalletUseCase {
     }
 
     @WithTransaction
-    public Uni<Void> execute(UUID userId) {
+    public Uni<Wallet> execute(UUID userId) {
         return walletRepository.lockUser(userId)
                 .flatMap(ignored -> walletRepository.findByUserId(userId))
                 .flatMap(wallet -> {
                     if (wallet != null) {
-                        return Uni.createFrom().voidItem();
+                        return Uni.createFrom().item(wallet);
                     }
-                    return walletRepository.save(new Wallet(UUID.randomUUID(), userId));
+                    Wallet newWallet = new Wallet(UUID.randomUUID(), userId);
+                    return walletRepository.save(newWallet).replaceWith(newWallet);
                 });
     }
 }

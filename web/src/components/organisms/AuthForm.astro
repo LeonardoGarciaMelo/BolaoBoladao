@@ -32,6 +32,7 @@ const copy = registering
 
 <script>
   import { apiBaseUrl } from "../../scripts/session";
+  import { readApiError } from "../../scripts/presentation";
 
   for (const form of document.querySelectorAll<HTMLFormElement>("[data-auth-form]")) {
     const message = form.querySelector<HTMLElement>("[data-form-message]");
@@ -59,8 +60,8 @@ const copy = registering
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.message || "Não foi possível concluir esta ação.");
+        if (!response.ok) throw new Error(await readApiError(response, "Não foi possível concluir esta ação."));
+        const result = await response.json();
 
         if (mode === "register") {
           window.location.assign("/login?registered=1");

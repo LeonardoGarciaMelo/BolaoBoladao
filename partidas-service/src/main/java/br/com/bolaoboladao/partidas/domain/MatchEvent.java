@@ -48,6 +48,24 @@ public class MatchEvent extends PanacheEntity {
     @Column(name = "reason", length = 500)
     public String reason;
 
+    @Column(name = "command_key", length = 150)
+    public String commandKey;
+
+    @Column(name = "command_fingerprint", length = 64)
+    public String commandFingerprint;
+
+    @Column(name = "duration_minutes_at_event", nullable = false)
+    public Integer durationMinutesAtEvent;
+
+    @Column(name = "expected_end_at_event", nullable = false)
+    public OffsetDateTime expectedEndAtEvent;
+
+    @Column(name = "started_at_event")
+    public OffsetDateTime startedAtEvent;
+
+    @Column(name = "ended_at_event")
+    public OffsetDateTime endedAtEvent;
+
     @NotNull
     @Column(name = "published", nullable = false)
     public boolean published = false;

@@ -18,6 +18,8 @@ public interface LedgerRepository {
 
     Uni<List<Ledger>> findByWalletIdPaged(UUID walletId, int page, int size);
 
+    Uni<Long> countByWalletId(UUID walletId);
+
     Uni<Ledger> findByIdempotencyKey(String idempotencyKey);
 
     Uni<Void> lockIdempotencyKey(String idempotencyKey);

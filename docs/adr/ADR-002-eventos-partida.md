@@ -11,7 +11,7 @@ comunicação precisa ser assíncrona (critério 2 da rubrica) e não pode
 perder eventos nem duplicá-los de forma que quebre a apuração
 (critério 3 — idempotência).
 
-Hoje, cada transição de partida (`criar`, `iniciar`, `gol`, `encerrar`, `cancelar`) grava um
+Hoje, cada transição de partida (`criar`, `iniciar`, `gol`, `anular gol`, `encerrar`, `cancelar`) grava um
 registro em `match_event` na mesma transação que altera o `match` — essa
 tabela é a fonte de verdade interna e append-only.
 
@@ -22,8 +22,15 @@ usando o padrão **transactional outbox**: a escrita em `match_event` e o
 processo separado (poller ou Debezium/CDC) lê os eventos ainda não
 publicados e envia ao Kafka, marcando como publicados depois do ack.
 
-Cada evento carrega um `event_id` estável (o próprio id do `match_event`),
-permitindo que o consumidor (Apostas) implemente idempotência por chave.
+Cada evento carrega um `event_id` globalmente único e estável no formato
+`<matchId>:<sequenceId>`. O `sequenceId` continua sendo o id local do
+`match_event`, enquanto o `matchId` evita colisões entre bancos, produtores ou
+ambientes que iniciem suas sequências no mesmo valor.
+
+O consumidor de Apostas aceita também o contrato legado, no qual `event_id`
+era numérico. Nesse caso, a deduplicação combina tópico, `match_id` e
+`event_id`: uma reentrega da mesma partida permanece idempotente, mas eventos
+de partidas diferentes com a mesma sequência local são processados.
 
 ## Alternativas consideradas
 - **Publicar direto no Kafka dentro do mesmo método de serviço, após o
@@ -48,5 +55,19 @@ permitindo que o consumidor (Apostas) implemente idempotência por chave.
   escopo deste projeto.
 - O relay está implementado em `MatchOutboxRelay`; `match_event.published`
   controla a confirmação e o lote para no primeiro erro para preservar ordem.
+- O consumidor de Apostas inicia grupos novos com `auto.offset.reset=earliest`,
+  incluindo eventos publicados antes de sua primeira conexão.
+- Testes Java publicam em `match-events-test`; o tópico de desenvolvimento
+  `match-events` não recebe eventos gerados pela suíte.
 - `MATCH_CANCELED` inclui administrador e justificativa e inicia a saga descrita
   no ADR-004.
+- O ciclo temporal é avançado por um poller PostgreSQL a cada segundo. Cada
+  partida é revalidada sob lock pessimista e em transação própria. Em catch-up,
+  `MATCH_STARTED` é confirmado antes de `MATCH_ENDED`; `occurred_at` registra
+  quando a recuperação foi processada.
+- Criação e comandos administrativos usam `Idempotency-Key`. Chave e impressão
+  SHA-256 ficam no `match_event`: replay idêntico não cria evento e reutilização
+  com outro conteúdo retorna `409`.
+- Duração, término previsto, início efetivo e encerramento efetivo são snapshots
+  do instante do evento no `match_event`; um relay atrasado não publica estado
+  futuro em eventos antigos.

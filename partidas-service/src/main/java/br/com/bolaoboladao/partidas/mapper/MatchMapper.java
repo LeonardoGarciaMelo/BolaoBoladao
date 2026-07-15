@@ -2,8 +2,12 @@ package br.com.bolaoboladao.partidas.mapper;
 
 import br.com.bolaoboladao.partidas.domain.Match;
 import br.com.bolaoboladao.partidas.domain.MatchEvent;
+import br.com.bolaoboladao.partidas.domain.MatchStatus;
 import br.com.bolaoboladao.partidas.dto.MatchEventResponse;
 import br.com.bolaoboladao.partidas.dto.MatchResponse;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 public final class MatchMapper {
 
@@ -18,12 +22,21 @@ public final class MatchMapper {
                 match.teamHomeScore,
                 match.teamAwayScore,
                 match.start,
+                match.durationMinutes,
+                match.expectedEnd,
+                match.startedAt,
                 match.end,
                 match.status,
+                isBettingOpen(match, OffsetDateTime.now(ZoneOffset.UTC)),
                 match.canceledAt,
                 match.canceledBy,
                 match.cancelReason
         );
+    }
+
+    public static boolean isBettingOpen(Match match, OffsetDateTime currentTime) {
+        return match.status == MatchStatus.SCHEDULED
+                && match.start.isAfter(currentTime);
     }
 
     public static MatchEventResponse toResponse(MatchEvent event) {

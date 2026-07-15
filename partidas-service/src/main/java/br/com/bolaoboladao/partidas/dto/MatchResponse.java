@@ -12,8 +12,12 @@ public record MatchResponse(
         Integer teamHomeScore,
         Integer teamAwayScore,
         OffsetDateTime start,
+        Integer durationMinutes,
+        OffsetDateTime expectedEnd,
+        OffsetDateTime startedAt,
         OffsetDateTime end,
         MatchStatus status,
+        boolean bettingOpen,
         OffsetDateTime canceledAt,
         UUID canceledBy,
         String cancelReason

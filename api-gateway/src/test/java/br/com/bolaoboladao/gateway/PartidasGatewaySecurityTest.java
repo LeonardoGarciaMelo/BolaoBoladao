@@ -12,6 +12,7 @@ import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
 class PartidasGatewaySecurityTest {
@@ -79,6 +80,28 @@ class PartidasGatewaySecurityTest {
         given().header("Authorization", "Bearer " + userToken)
                 .contentType("application/json").body("{}")
                 .when().post("/api/partidas").then().statusCode(405);
+    }
+
+    @Test
+    void deveEncaminharComandosChaveEIdentidadeDoJwt() throws Exception {
+        String adminToken = token("bolao-user-service", "bolao-api", Instant.now().plusSeconds(300), Set.of("USER", "ADMIN"));
+        String id = "11111111-1111-1111-1111-111111111111";
+        String key = "command-key";
+
+        given().header("Authorization", "Bearer " + adminToken)
+                .header("X-Authenticated-User-Id", "forged")
+                .header("Idempotency-Key", key).contentType("application/json")
+                .body("{\"side\":\"HOME\"}")
+                .when().post("/api/admin/partidas/{id}/gol/anular", id)
+                .then().statusCode(200).body("status", equalTo("IN_PROGRESS"))
+                .body("observedPath", equalTo("/admin/partidas/" + id + "/gol/anular"))
+                .body("observedKey", equalTo(key))
+                .body("observedUser", equalTo("22121193-3c26-4c26-812d-123456789012"));
+
+        for (String action : new String[]{"iniciar", "encerrar"}) {
+            given().header("Authorization", "Bearer " + adminToken).header("Idempotency-Key", key + action)
+                    .when().post("/api/admin/partidas/{id}/{action}", id, action).then().statusCode(200);
+        }
     }
 
     private String token(String issuer, String audience, Instant expiresAt, Set<String> groups) throws Exception {

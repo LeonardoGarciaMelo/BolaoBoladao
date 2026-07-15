@@ -39,6 +39,38 @@ public class AdminPartidasGatewayResource {
     }
 
     @POST
+    @Path("/{id}/iniciar")
+    public Uni<Response> start(@PathParam("id") String id, @Context HttpHeaders headers,
+                               @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return adminPost(partidasServiceUrl + "/admin/partidas/" + id + "/iniciar",
+                headers, idempotencyKey, "{}");
+    }
+
+    @POST
+    @Path("/{id}/gol")
+    public Uni<Response> score(@PathParam("id") String id, String body, @Context HttpHeaders headers,
+                               @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return adminPost(partidasServiceUrl + "/admin/partidas/" + id + "/gol",
+                headers, idempotencyKey, body);
+    }
+
+    @POST
+    @Path("/{id}/gol/anular")
+    public Uni<Response> annulScore(@PathParam("id") String id, String body, @Context HttpHeaders headers,
+                                    @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return adminPost(partidasServiceUrl + "/admin/partidas/" + id + "/gol/anular",
+                headers, idempotencyKey, body);
+    }
+
+    @POST
+    @Path("/{id}/encerrar")
+    public Uni<Response> end(@PathParam("id") String id, @Context HttpHeaders headers,
+                             @HeaderParam("Idempotency-Key") String idempotencyKey) {
+        return adminPost(partidasServiceUrl + "/admin/partidas/" + id + "/encerrar",
+                headers, idempotencyKey, "{}");
+    }
+
+    @POST
     @Path("/{id}/cancel")
     public Uni<Response> cancel(@PathParam("id") String id, String body, @Context HttpHeaders headers,
                                 @HeaderParam("Idempotency-Key") String idempotencyKey) {

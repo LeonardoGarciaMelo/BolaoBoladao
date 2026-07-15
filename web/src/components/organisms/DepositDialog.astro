@@ -1,0 +1,96 @@
+---
+const presets = [2000, 5000, 10000, 20000];
+const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+---
+
+<dialog class="user-dialog deposit-dialog" data-balance-dialog aria-labelledby="deposit-dialog-title">
+  <div class="user-dialog__surface">
+    <button class="user-dialog__close" type="button" aria-label="Fechar" data-balance-dialog-close>×</button>
+    <span class="user-dialog__eyebrow">BOLADÃO PAY SANDBOX</span>
+    <h2 id="deposit-dialog-title">Adicionar saldo</h2>
+    <div class="deposit-step" data-deposit-entry>
+      <p>Escolha quanto deseja adicionar à sua carteira.</p>
+      <div class="deposit-presets" aria-label="Valores rápidos">
+        {presets.map((amount) => <button type="button" data-deposit-preset={amount}>{money.format(amount / 100)}</button>)}
+      </div>
+      <label class="deposit-custom"><span>Outro valor</span><div><b>R$</b><input name="depositAmount" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-describedby="deposit-limits" /></div></label>
+      <small id="deposit-limits">Entre R$ 1,00 e R$ 10.000,00.</small>
+      <p class="user-form-message" data-deposit-message aria-live="polite"></p>
+      <div class="user-dialog__actions"><button class="user-primary-action" type="button" data-deposit-review>REVISAR DEPÓSITO</button></div>
+    </div>
+    <div class="deposit-step" data-deposit-review-step hidden>
+      <p>Revise os dados antes de abrir o ambiente fictício de pagamento.</p>
+      <dl class="bet-review-list"><div><dt>Valor</dt><dd data-deposit-review-amount>R$ 0,00</dd></div><div><dt>Método</dt><dd>PIX fictício</dd></div></dl>
+      <p class="deposit-sandbox-note">Nenhum pagamento real será realizado.</p>
+      <p class="user-form-message" data-deposit-review-message aria-live="polite"></p>
+      <div class="user-dialog__actions"><button class="user-secondary-action" type="button" data-deposit-edit>EDITAR VALOR</button><button class="user-primary-action" type="button" data-deposit-submit>IR PARA PAGAMENTO</button></div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  import { authenticatedFetch, createIdempotencyKey } from "../../scripts/session";
+  import { formatCents } from "../../scripts/user";
+  import { readApiError } from "../../scripts/presentation";
+
+  const balanceDialog = document.querySelector<HTMLDialogElement>("[data-balance-dialog]");
+  const entryStep = document.querySelector<HTMLElement>("[data-deposit-entry]");
+  const reviewStep = document.querySelector<HTMLElement>("[data-deposit-review-step]");
+  const amountInput = document.querySelector<HTMLInputElement>("[name=depositAmount]");
+  const entryMessage = document.querySelector<HTMLElement>("[data-deposit-message]");
+  const reviewMessage = document.querySelector<HTMLElement>("[data-deposit-review-message]");
+  let depositAmountCents = 0;
+  let depositKey: string | undefined;
+
+  const parseAmount = (value: string) => {
+    const normalized = value.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+    const amount = Number(normalized);
+    return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+  };
+  const resetDeposit = () => {
+    depositAmountCents = 0; depositKey = undefined;
+    if (amountInput) amountInput.value = "";
+    if (entryMessage) entryMessage.textContent = "";
+    if (reviewMessage) reviewMessage.textContent = "";
+    if (entryStep) entryStep.hidden = false;
+    if (reviewStep) reviewStep.hidden = true;
+    document.querySelectorAll("[data-deposit-preset]").forEach((preset) => preset.removeAttribute("aria-pressed"));
+  };
+
+  document.querySelectorAll("[data-add-balance]").forEach((button) => button.addEventListener("click", () => { resetDeposit(); balanceDialog?.showModal(); }));
+  document.querySelector("[data-balance-dialog-close]")?.addEventListener("click", () => balanceDialog?.close());
+  document.querySelectorAll<HTMLButtonElement>("[data-deposit-preset]").forEach((preset) => preset.addEventListener("click", () => {
+    document.querySelectorAll("[data-deposit-preset]").forEach((item) => item.setAttribute("aria-pressed", String(item === preset)));
+    depositAmountCents = Number(preset.dataset.depositPreset);
+    if (amountInput) amountInput.value = (depositAmountCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+    depositKey = undefined;
+  }));
+  amountInput?.addEventListener("input", () => { depositAmountCents = parseAmount(amountInput.value); depositKey = undefined; document.querySelectorAll("[data-deposit-preset]").forEach((item) => item.setAttribute("aria-pressed", "false")); });
+  document.querySelector("[data-deposit-review]")?.addEventListener("click", () => {
+    depositAmountCents = parseAmount(amountInput?.value || "");
+    if (depositAmountCents < 100 || depositAmountCents > 1_000_000) { if (entryMessage) entryMessage.textContent = "Informe um valor entre R$ 1,00 e R$ 10.000,00."; amountInput?.focus(); return; }
+    depositKey = createIdempotencyKey();
+    const reviewAmount = document.querySelector<HTMLElement>("[data-deposit-review-amount]");
+    if (reviewAmount) reviewAmount.textContent = formatCents(depositAmountCents);
+    if (entryStep) entryStep.hidden = true;
+    if (reviewStep) reviewStep.hidden = false;
+    document.querySelector<HTMLButtonElement>("[data-deposit-submit]")?.focus();
+  });
+  document.querySelector("[data-deposit-edit]")?.addEventListener("click", () => { depositKey = undefined; if (reviewStep) reviewStep.hidden = true; if (entryStep) entryStep.hidden = false; amountInput?.focus(); });
+  document.querySelector<HTMLButtonElement>("[data-deposit-submit]")?.addEventListener("click", async (event) => {
+    const submit = event.currentTarget as HTMLButtonElement;
+    if (!depositKey) depositKey = createIdempotencyKey();
+    submit.disabled = true; if (reviewMessage) reviewMessage.textContent = "Preparando sua cobrança…";
+    try {
+      const response = await authenticatedFetch("/wallet/me/deposits", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": depositKey }, body: JSON.stringify({ amountCents: depositAmountCents }) });
+      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível preparar o pagamento."));
+      const deposit = await response.json() as { checkoutUrl?: string };
+      if (!deposit.checkoutUrl) throw new Error("A cobrança ainda está sendo preparada. Consulte-a na Carteira.");
+      const checkout = new URL(deposit.checkoutUrl, window.location.href);
+      if (window.location.hostname === "api-gateway" && checkout.hostname === "localhost" && checkout.port === "8080") {
+        checkout.protocol = window.location.protocol; checkout.host = window.location.host;
+      }
+      window.location.assign(checkout.toString());
+    } catch (error) { if (reviewMessage) reviewMessage.textContent = error instanceof Error ? error.message : "Não foi possível preparar o pagamento."; submit.disabled = false; }
+  });
+</script>

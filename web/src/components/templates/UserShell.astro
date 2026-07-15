@@ -1,0 +1,110 @@
+---
+import BrandLogo from "../molecules/BrandLogo.astro";
+import Icon from "../atoms/Icon.astro";
+import DepositDialog from "../organisms/DepositDialog.astro";
+
+interface Props {
+  active: "matches" | "bets" | "wallet" | "profile";
+  title: string;
+  eyebrow: string;
+}
+
+const { active, title, eyebrow } = Astro.props;
+const primaryLinks = [
+  { key: "matches", href: "/partidas", label: "Partidas", icon: "trophy" },
+  { key: "bets", href: "/palpites", label: "Palpites", icon: "target" },
+] as const;
+---
+
+<div class="user-route-loading route-loading" data-user-loading><span></span><p>Preparando sua área…</p></div>
+<div class="user-shell" data-user-shell hidden>
+  <header class="user-header">
+    <div class="user-header__main">
+      <BrandLogo href="/partidas" label="Bolão Boladão, partidas" />
+      <nav class="user-tabs" aria-label="Navegação principal">
+        {primaryLinks.map((link) => (
+          <a href={link.href} aria-current={active === link.key ? "page" : undefined}>
+            <Icon name={link.icon} size={19} /><span>{link.label}</span>
+          </a>
+        ))}
+      </nav>
+      <div class="user-header__actions">
+        <div class="user-balance"><small>SALDO</small><strong data-user-balance data-balance-cents="0">R$ 0,00</strong></div>
+        <button class="user-add-balance" type="button" data-add-balance><span aria-hidden="true">＋</span> ADICIONAR SALDO</button>
+        <div class="user-avatar-menu">
+          <button class="user-avatar" type="button" data-avatar-trigger aria-expanded="false" aria-haspopup="menu" aria-label="Abrir menu da conta"><span data-user-initials>U</span></button>
+          <div class="user-account-menu" data-account-menu role="menu" hidden>
+            <div><strong data-user-name>Usuário</strong><small data-user-username>@usuario</small></div>
+            <a role="menuitem" href="/carteira">Carteira</a>
+            <a role="menuitem" href="/perfil">Perfil</a>
+            <button role="menuitem" type="button" data-user-logout>Sair</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="user-workspace">
+    <header class="user-page-heading"><p>{eyebrow}</p><h1>{title}</h1></header>
+    <slot />
+  </main>
+</div>
+
+<section class="user-access-error" data-user-error hidden>
+  <BrandLogo href="/" label="Bolão Boladão" />
+  <p>Não foi possível abrir sua área.</p>
+  <a href="/login">VOLTAR AO LOGIN</a>
+</section>
+
+<DepositDialog />
+
+<script>
+  import { clearAccessToken, getCurrentUser } from "../../scripts/session";
+  import { announceWallet, formatCents, getWalletSummary, type WalletSummary } from "../../scripts/user";
+
+  const shell = document.querySelector<HTMLElement>("[data-user-shell]");
+  const loading = document.querySelector<HTMLElement>("[data-user-loading]");
+  const error = document.querySelector<HTMLElement>("[data-user-error]");
+  const avatar = document.querySelector<HTMLButtonElement>("[data-avatar-trigger]");
+  const menu = document.querySelector<HTMLElement>("[data-account-menu]");
+
+  const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U";
+  const renderWallet = (wallet: WalletSummary) => {
+    document.querySelectorAll<HTMLElement>("[data-user-balance]").forEach((target) => {
+      target.textContent = formatCents(wallet.balanceCents);
+      target.dataset.balanceCents = String(wallet.balanceCents);
+    });
+  };
+
+  window.addEventListener("wallet:updated", (event) => renderWallet((event as CustomEvent<WalletSummary>).detail));
+  const closeMenu = (restoreFocus = false) => {
+    if (menu) menu.hidden = true;
+    avatar?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) avatar?.focus();
+  };
+  avatar?.addEventListener("click", () => {
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+    avatar.setAttribute("aria-expanded", String(!menu.hidden));
+    if (!menu.hidden) menu.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+  });
+  document.addEventListener("click", (event) => {
+    if (!(event.target as Element).closest(".user-avatar-menu")) closeMenu();
+  });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeMenu(true); });
+  document.querySelector("[data-user-logout]")?.addEventListener("click", () => {
+    clearAccessToken(); window.location.assign("/login");
+  });
+  try {
+    const [user, wallet] = await Promise.all([getCurrentUser(), getWalletSummary()]);
+    document.querySelectorAll<HTMLElement>("[data-user-name]").forEach((target) => target.textContent = user.name);
+    document.querySelectorAll<HTMLElement>("[data-user-username]").forEach((target) => target.textContent = `@${user.username}`);
+    document.querySelectorAll<HTMLElement>("[data-user-initials]").forEach((target) => target.textContent = initials(user.name));
+    renderWallet(wallet); announceWallet(wallet);
+    if (loading) loading.hidden = true;
+    if (shell) shell.hidden = false;
+    window.dispatchEvent(new CustomEvent("user:ready", { detail: { user, wallet } }));
+  } catch {
+    if (loading) loading.hidden = true;
+    if (error) error.hidden = false;
+  }
+</script>

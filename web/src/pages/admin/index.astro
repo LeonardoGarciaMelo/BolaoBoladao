@@ -20,6 +20,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
 
 <script>
   import { authenticatedFetch, requireAdmin } from "../../scripts/session";
+  import { activityEventLabel } from "../../scripts/presentation";
   const activity = document.querySelector<HTMLElement>("[data-activity]");
   const loadMore = document.querySelector<HTMLButtonElement>("[data-load-more]");
   const format = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
@@ -35,7 +36,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
       const row = document.createElement("article");
       const copy = document.createElement("div");
       const label = document.createElement("strong");
-      label.textContent = ({ MATCH_CREATED: "Partida criada", MATCH_CANCELED: "Partida cancelada", ADMIN_CREDIT: "Crédito administrativo" } as Record<string, string>)[event.type] ?? event.type;
+      label.textContent = activityEventLabel(event.type);
       const detail = document.createElement("span"); detail.textContent = event.reason || `Recurso ${event.resourceId}`;
       const time = document.createElement("time"); time.textContent = format.format(new Date(event.occurredAt));
       copy.append(label, detail); row.append(copy, time); activity.append(row);

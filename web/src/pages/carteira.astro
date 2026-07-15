@@ -1,0 +1,50 @@
+---
+import Layout from "../layouts/Layout.astro";
+import UserShell from "../components/templates/UserShell.astro";
+---
+
+<Layout title="Carteira | Bolão Boladão">
+  <UserShell active="wallet" eyebrow="SEU DINHEIRO" title="Carteira">
+    <section class="wallet-summary-card">
+      <div><small>SALDO DISPONÍVEL</small><strong data-wallet-page-balance>R$ 0,00</strong><p>Use seu saldo para criar palpites individuais.</p></div>
+      <button class="user-primary-action" type="button" data-add-balance>＋ ADICIONAR SALDO</button>
+    </section>
+    <section class="wallet-history-section wallet-deposits-section">
+      <header><div><p>PIX FICTÍCIO</p><h2>Depósitos recentes</h2></div><button type="button" data-deposit-list-retry hidden>TENTAR NOVAMENTE</button></header>
+      <div class="wallet-deposit-list" data-deposit-list aria-live="polite"></div>
+      <div class="user-list-state" data-deposit-list-state>Carregando depósitos…</div>
+      <button class="user-load-more" type="button" data-deposit-list-more hidden>CARREGAR MAIS</button>
+    </section>
+    <section class="wallet-history-section">
+      <header><div><p>EXTRATO</p><h2>Histórico de transações</h2></div><button type="button" data-wallet-retry hidden>TENTAR NOVAMENTE</button></header>
+      <div class="wallet-history" data-wallet-history aria-live="polite"></div>
+      <div class="user-list-state" data-wallet-state>Carregando transações…</div>
+      <button class="user-load-more" type="button" data-wallet-more hidden>CARREGAR MAIS</button>
+    </section>
+  </UserShell>
+</Layout>
+
+<script>
+  import { authenticatedFetch } from "../scripts/session";
+  import { formatCents, getWalletSummary, refreshWallet, type WalletSummary } from "../scripts/user";
+  import { depositStatusLabel, readApiError, walletReasonLabel } from "../scripts/presentation";
+  type Entry = { id: string; reason: string; operation: "CREDIT" | "DEBIT"; amountCents: number; occurredAt: string; referenceId?: string; note?: string };
+  type Page = { items: Entry[]; page: number; size: number; total: number };
+  type Deposit = { depositId: string; amountCents: number; status: "CREATING" | "PENDING" | "CONFIRMED" | "REFUSED" | "EXPIRED"; checkoutUrl?: string; expiresAt?: string; createdAt: string; updatedAt: string; confirmedAt?: string };
+  type DepositPage = { items: Deposit[]; page: number; size: number; total: number };
+  let page = 0; let total = 0; const history = document.querySelector<HTMLElement>("[data-wallet-history]"); const state = document.querySelector<HTMLElement>("[data-wallet-state]"); const more = document.querySelector<HTMLButtonElement>("[data-wallet-more]"); const retry = document.querySelector<HTMLButtonElement>("[data-wallet-retry]");
+  let depositPage = 0; let depositTotal = 0; const depositList = document.querySelector<HTMLElement>("[data-deposit-list]"); const depositState = document.querySelector<HTMLElement>("[data-deposit-list-state]"); const depositMore = document.querySelector<HTMLButtonElement>("[data-deposit-list-more]"); const depositRetry = document.querySelector<HTMLButtonElement>("[data-deposit-list-retry]");
+  const dateTime = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" });
+  const renderBalance = (wallet: WalletSummary) => { const target = document.querySelector<HTMLElement>("[data-wallet-page-balance]"); if (target) target.textContent = formatCents(wallet.balanceCents); };
+  const renderEntry = (entry: Entry) => { const article = document.createElement("article"); article.className = "wallet-entry"; article.dataset.operation = entry.operation.toLowerCase(); const icon = document.createElement("span"); icon.textContent = entry.operation === "CREDIT" ? "＋" : "−"; const copy = document.createElement("div"); const title = document.createElement("strong"); title.textContent = walletReasonLabel(entry.reason); const when = document.createElement("time"); when.dateTime = entry.occurredAt; when.textContent = dateTime.format(new Date(entry.occurredAt)); copy.append(title, when); if (entry.note) { const note = document.createElement("small"); note.textContent = entry.note; copy.append(note); } const amount = document.createElement("b"); amount.textContent = `${entry.operation === "CREDIT" ? "+" : "−"} ${formatCents(entry.amountCents)}`; article.append(icon, copy, amount); return article; };
+  const load = async (append = false) => { if (!append) { page = 0; history?.replaceChildren(); } if (state) { state.hidden = false; state.textContent = "Carregando transações…"; } if (retry) retry.hidden = true; try { const response = await authenticatedFetch(`/wallet/me/statement?page=${page}&size=10`); if (!response.ok) throw new Error("Não foi possível carregar o extrato."); const result = await response.json() as Page; total = result.total; result.items.forEach((entry) => history?.append(renderEntry(entry))); const count = history?.children.length || 0; if (state) { state.hidden = count > 0; state.textContent = "Sua carteira ainda não possui movimentações."; } if (more) more.hidden = count >= total; } catch (error) { if (state) { state.hidden = false; state.textContent = error instanceof Error ? error.message : "Erro inesperado."; } if (retry) retry.hidden = false; } };
+  const terminal = (deposit: Deposit) => ["CONFIRMED", "REFUSED", "EXPIRED"].includes(deposit.status);
+  const renderDeposit = (deposit: Deposit) => { const article = document.createElement("article"); article.className = "wallet-deposit"; article.dataset.status = deposit.status.toLowerCase(); const copy = document.createElement("div"); const title = document.createElement("strong"); title.textContent = formatCents(deposit.amountCents); const when = document.createElement("time"); when.dateTime = deposit.createdAt; when.textContent = dateTime.format(new Date(deposit.createdAt)); copy.append(title, when); const status = document.createElement("span"); status.textContent = depositStatusLabel(deposit.status); const action = document.createElement(deposit.status === "PENDING" && deposit.checkoutUrl ? "a" : "button"); action.className = "user-secondary-action"; if (action instanceof HTMLAnchorElement) { action.href = deposit.checkoutUrl!; action.textContent = "CONTINUAR"; } else { action.type = "button"; action.textContent = deposit.status === "CREATING" ? "TENTAR PREPARAR" : "VERIFICAR PAGAMENTO"; action.hidden = terminal(deposit); action.addEventListener("click", () => void reconcile(deposit.depositId, action as HTMLButtonElement)); } article.append(copy, status, action); return article; };
+  const loadDeposits = async (append = false) => { if (!append) { depositPage = 0; depositList?.replaceChildren(); } if (depositState) { depositState.hidden = false; depositState.textContent = "Carregando depósitos…"; } if (depositRetry) depositRetry.hidden = true; try { const response = await authenticatedFetch(`/wallet/me/deposits?page=${depositPage}&size=10`); if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar os depósitos.")); const result = await response.json() as DepositPage; depositTotal = result.total; result.items.forEach((deposit) => depositList?.append(renderDeposit(deposit))); const count = depositList?.children.length || 0; if (depositState) { depositState.hidden = count > 0; depositState.textContent = "Você ainda não iniciou depósitos."; } if (depositMore) depositMore.hidden = count >= depositTotal; } catch (error) { if (depositState) { depositState.hidden = false; depositState.textContent = error instanceof Error ? error.message : "Não foi possível carregar os depósitos."; } if (depositRetry) depositRetry.hidden = false; } };
+  const refreshAfterTerminal = async () => { try { renderBalance(await refreshWallet()); } catch {} await Promise.all([load(), loadDeposits()]); };
+  const reconcile = async (depositId: string, button?: HTMLButtonElement) => { if (button) button.disabled = true; try { const response = await authenticatedFetch(`/wallet/me/deposits/${depositId}/reconcile`, { method: "POST" }); if (!response.ok) throw new Error(await readApiError(response, "Não foi possível verificar o pagamento.")); const deposit = await response.json() as Deposit; if (terminal(deposit)) await refreshAfterTerminal(); else await loadDeposits(); return deposit; } catch (error) { if (depositState) { depositState.hidden = false; depositState.textContent = error instanceof Error ? error.message : "Não foi possível verificar o pagamento."; } return undefined; } finally { if (button) button.disabled = false; } };
+  const reconcileReturn = async (depositId: string) => { const first = await reconcile(depositId); if (!first || terminal(first)) return; for (let attempt = 0; attempt < 15; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const response = await authenticatedFetch(`/wallet/me/deposits/${depositId}`); if (!response.ok) break; const deposit = await response.json() as Deposit; if (terminal(deposit)) { await refreshAfterTerminal(); return; } } if (depositState) { depositState.hidden = false; depositState.textContent = "O pagamento ainda está pendente. Use Verificar pagamento para consultar novamente."; } };
+  const start = async () => { try { renderBalance(await getWalletSummary()); } catch {} await Promise.all([load(), loadDeposits()]); const returnedDeposit = new URLSearchParams(window.location.search).get("depositId"); if (returnedDeposit) { window.history.replaceState(null, "", "/carteira"); void reconcileReturn(returnedDeposit); } };
+  window.addEventListener("wallet:updated", (event) => renderBalance((event as CustomEvent<WalletSummary>).detail)); more?.addEventListener("click", () => { page += 1; void load(true); }); retry?.addEventListener("click", () => void load()); depositMore?.addEventListener("click", () => { depositPage += 1; void loadDeposits(true); }); depositRetry?.addEventListener("click", () => void loadDeposits());
+  if (document.querySelector("[data-user-shell]:not([hidden])")) void start(); else window.addEventListener("user:ready", () => void start(), { once: true });
+</script>
