@@ -12,7 +12,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
           <label>VISITANTE<input name="teamAwayName" list="team-options" required minlength="2" autocomplete="off" /></label>
           <datalist id="team-options"></datalist>
           <div class="admin-datetime-fields">
-            <label>DATA<input name="startDate" type="date" aria-required="true" /></label>
+            <label class="admin-date-field">DATA<input name="startDate" type="date" aria-required="true" /></label>
             <label>HORÁRIO<input name="startTime" type="time" step="60" aria-required="true" /></label>
             <label>DURAÇÃO (MIN)<input name="durationMinutes" type="number" min="1" max="300" value="105" required /></label>
           </div>
@@ -24,6 +24,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
       </section>
       <section class="admin-card admin-match-list-card">
         <header class="admin-card__header"><div><p>AGENDA</p><h2>Partidas cadastradas</h2></div><select data-status-filter aria-label="Filtrar por status"><option value="">TODAS</option><option value="SCHEDULED">AGENDADAS</option><option value="IN_PROGRESS">AO VIVO</option><option value="FINISHED">ENCERRADAS</option><option value="CANCELED">CANCELADAS</option></select></header>
+        <p class="admin-match-update-status" data-match-update-status role="status" aria-live="polite"></p>
         <div class="admin-match-list" data-match-list><p class="admin-empty">Carregando partidas…</p></div>
       </section>
     </div>
@@ -50,6 +51,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
 <script>
   import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
   import { matchStatusLabel, readApiError, refundStatusLabel } from "../../scripts/presentation";
+  import { reconcileMatchesById, updateScore, updateText } from "../../scripts/keyed-reconcile";
   type Match = { id: string; teamHome: string; teamAway: string; teamHomeScore: number; teamAwayScore: number; start: string; durationMinutes: number; expectedEnd: string; startedAt?: string; end?: string; status: string; cancelReason?: string };
   const list = document.querySelector<HTMLElement>("[data-match-list]");
   const form = document.querySelector<HTMLFormElement>("[data-match-form]");
@@ -59,12 +61,15 @@ import AdminShell from "../../components/templates/AdminShell.astro";
   const cancelForm = document.querySelector<HTMLFormElement>("[data-cancel-form]");
   const commandDialog = document.querySelector<HTMLDialogElement>("[data-command-dialog]");
   const commandForm = document.querySelector<HTMLFormElement>("[data-command-form]");
+  const updateStatus = document.querySelector<HTMLElement>("[data-match-update-status]");
   let selectedMatch: Match | undefined;
   let selectedCommand: { action: "iniciar" | "encerrar" | "anular"; side?: "HOME" | "AWAY" } | undefined;
   let loadingMatches = false;
+  let pendingReload = false;
   let createKey: string | undefined;
   let cancelKey: string | undefined;
   const retryKeys = new Map<string, string>();
+  const matchesById = new Map<string, Match>();
   const formatter = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
   document.querySelector<HTMLElement>("[data-timezone]")!.textContent = `Fuso exibido: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`;
 
@@ -77,76 +82,148 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     }));
   };
 
-  const loadMatches = async () => {
-    if (loadingMatches) return;
-    loadingMatches = true;
-    try {
-    await requireAdmin();
-    const status = filter?.value ? `&status=${filter.value}` : "";
-    const response = await authenticatedFetch(`/admin/partidas?page=0&size=50${status}`);
-    if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar as partidas."));
-    const page = await response.json();
-    if (!list) return;
-    list.replaceChildren();
-    if (!page.items?.length) { const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhuma partida nesta seleção."; list.append(empty); return; }
-    for (const match of page.items as Match[]) list.append(renderMatch(match));
-    } catch (error) {
-      if (list) list.innerHTML = `<p class="admin-empty">${error instanceof Error ? error.message : "Não foi possível carregar as partidas."}</p>`;
-    } finally { loadingMatches = false; }
+  const showUpdateError = (copy = "") => {
+    if (!updateStatus) return;
+    updateStatus.textContent = copy;
+    updateStatus.classList.toggle("admin-match-update-status--visible", Boolean(copy));
   };
 
-  const renderMatch = (match: Match) => {
+  const loadMatches = async (showLoading = false) => {
+    if (loadingMatches) { pendingReload ||= showLoading; return; }
+    loadingMatches = true;
+    const requestedStatus = filter?.value || "";
+    if (showLoading && list) {
+      list.replaceChildren();
+      const loading = document.createElement("p"); loading.className = "admin-empty"; loading.textContent = "Carregando partidas…"; list.append(loading);
+    }
+    try {
+      await requireAdmin();
+      const status = requestedStatus ? `&status=${requestedStatus}` : "";
+      const response = await authenticatedFetch(`/admin/partidas?page=0&size=50${status}`);
+      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível carregar as partidas."));
+      const page = await response.json() as { items?: Match[] };
+      if (!list) return;
+      if ((filter?.value || "") !== requestedStatus) { pendingReload = true; return; }
+      const items = page.items || [];
+      matchesById.clear(); items.forEach((match) => matchesById.set(match.id, match));
+      reconcileMatchesById(list, items, { key: (match) => match.id, create: createMatchRow, update: updateMatchRow });
+      if (!items.length) { const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = "Nenhuma partida nesta seleção."; list.append(empty); }
+      showUpdateError();
+    } catch (error) {
+      const copy = error instanceof Error ? error.message : "Não foi possível carregar as partidas.";
+      if (list && !list.querySelector("[data-match-id]")) {
+        list.replaceChildren(); const empty = document.createElement("p"); empty.className = "admin-empty"; empty.textContent = copy; list.append(empty);
+      } else showUpdateError("Não foi possível atualizar agora. Tentaremos novamente.");
+    } finally {
+      loadingMatches = false;
+      if (pendingReload) { pendingReload = false; void loadMatches(true); }
+    }
+  };
+
+  const createMatchRow = () => {
     const row = document.createElement("article"); row.className = "admin-match-row";
-    const status = document.createElement("span"); status.className = `admin-status admin-status--${match.status.toLowerCase()}`; status.textContent = matchStatusLabel(match.status);
-    const copy = document.createElement("div");
-    const teams = document.createElement("strong"); teams.textContent = `${match.teamHome} × ${match.teamAway}`;
-    const date = document.createElement("time"); date.textContent = `Início previsto: ${formatter.format(new Date(match.start))}`;
-    const expected = document.createElement("time"); expected.textContent = match.status === "FINISHED" && match.end
-      ? `Encerrada em: ${formatter.format(new Date(match.end))}`
-      : `Término previsto: ${formatter.format(new Date(match.expectedEnd))}`;
-    copy.append(teams, date, expected);
-    if (match.status !== "SCHEDULED") { const score = document.createElement("b"); score.className = "admin-live-score"; score.textContent = `${match.teamHomeScore} × ${match.teamAwayScore}`; copy.append(score); }
-    row.append(status, copy);
-    const actions = document.createElement("div"); actions.className = "admin-match-actions";
-    if (match.status === "SCHEDULED") actions.append(actionButton("INICIAR AGORA", () => confirmCommand(match, "iniciar")));
-    if (match.status === "IN_PROGRESS") {
-      actions.append(scoreControl(match, "HOME"), scoreControl(match, "AWAY"));
-      actions.append(actionButton("ENCERRAR AGORA", () => confirmCommand(match, "encerrar")));
-    }
-    if (["SCHEDULED", "IN_PROGRESS"].includes(match.status)) {
-      const button = document.createElement("button"); button.className = "admin-cancel-trigger"; button.textContent = "CANCELAR";
-      button.addEventListener("click", () => { selectedMatch = match; cancelKey = undefined; document.querySelector<HTMLElement>("[data-cancel-match-label]")!.textContent = `${match.teamHome} × ${match.teamAway}`; dialog?.showModal(); });
-      actions.append(button); row.append(actions);
-    } else if (match.status === "CANCELED") {
-      const audit = document.createElement("div"); audit.className = "admin-match-refund";
-      const reason = document.createElement("small"); reason.textContent = match.cancelReason || "Cancelada";
-      const progress = document.createElement("span"); progress.textContent = "ESTORNOS: CONSULTANDO";
-      const retry = document.createElement("button"); retry.className = "admin-cancel-trigger"; retry.textContent = "REPROCESSAR ESTORNOS"; retry.hidden = true;
-      retry.addEventListener("click", async () => {
-        retry.disabled = true;
-        const response = await authenticatedFetch(`/admin/partidas/${match.id}/refunds/retry`, { method: "POST" });
-        retry.disabled = false;
-        if (response.ok) { retry.hidden = true; progress.textContent = "ESTORNOS: REPROCESSANDO"; void pollRefunds(match.id, progress, retry); }
-      });
-      audit.append(reason, progress, retry); row.append(audit); void pollRefunds(match.id, progress, retry);
-    }
+    const status = document.createElement("span"); status.className = "admin-status"; status.dataset.role = "status";
+    const copy = document.createElement("div"); copy.dataset.role = "copy";
+    const teams = document.createElement("strong"); teams.dataset.role = "teams";
+    const date = document.createElement("time"); date.dataset.role = "start";
+    const expected = document.createElement("time"); expected.dataset.role = "end";
+    const score = document.createElement("b"); score.className = "admin-live-score"; score.dataset.role = "score";
+    copy.append(teams, date, expected, score);
+    const actions = document.createElement("div"); actions.className = "admin-match-actions"; actions.dataset.role = "actions";
+    row.append(status, copy, actions);
     return row;
   };
 
-  const actionButton = (label: string, handler: () => void) => {
-    const button = document.createElement("button"); button.type = "button"; button.className = "admin-secondary admin-match-action"; button.textContent = label; button.addEventListener("click", handler); return button;
+  const actionButton = (label: string, action: string, side?: "HOME" | "AWAY") => {
+    const button = document.createElement("button"); button.type = "button"; button.className = "admin-secondary admin-match-action"; button.textContent = label; button.dataset.matchAction = action;
+    if (side) button.dataset.side = side;
+    return button;
   };
+
   const scoreControl = (match: Match, side: "HOME" | "AWAY") => {
-    const control = document.createElement("div"); control.className = "admin-score-control";
-    const label = document.createElement("span"); label.textContent = side === "HOME" ? match.teamHome : match.teamAway;
-    const minus = actionButton("−", () => confirmCommand(match, "anular", side)); minus.ariaLabel = `Anular gol de ${label.textContent}`; minus.disabled = (side === "HOME" ? match.teamHomeScore : match.teamAwayScore) <= 0;
-    const value = document.createElement("b"); value.textContent = String(side === "HOME" ? match.teamHomeScore : match.teamAwayScore);
-    const plus = actionButton("+", () => void sendCommand(match, "gol", side).catch((error) => {
-      const knownMessage = error instanceof Error && !/fetch|network|load failed/i.test(error.message) ? error.message : undefined;
-      if (message) message.textContent = knownMessage || "Não foi possível adicionar o gol.";
-    })); plus.ariaLabel = `Adicionar gol de ${label.textContent}`; plus.disabled = Number(value.textContent) >= 99;
-    control.append(label, minus, value, plus); return control;
+    const control = document.createElement("div"); control.className = "admin-score-control"; control.dataset.scoreSide = side;
+    const label = document.createElement("span");
+    const minus = actionButton("−", "anular", side);
+    const value = document.createElement("b"); value.dataset.role = "score-value";
+    const plus = actionButton("+", "gol", side);
+    control.append(label, minus, value, plus); syncScoreControl(control, match); return control;
   };
+
+  const syncScoreControl = (control: HTMLElement, match: Match) => {
+    const side = control.dataset.scoreSide as "HOME" | "AWAY";
+    const team = side === "HOME" ? match.teamHome : match.teamAway;
+    const value = side === "HOME" ? match.teamHomeScore : match.teamAwayScore;
+    updateText(control.querySelector("span"), team);
+    updateText(control.querySelector('[data-role="score-value"]'), String(value));
+    const minus = control.querySelector<HTMLButtonElement>('[data-match-action="anular"]');
+    const plus = control.querySelector<HTMLButtonElement>('[data-match-action="gol"]');
+    if (minus) { minus.ariaLabel = `Anular gol de ${team}`; minus.disabled = value <= 0; }
+    if (plus) { plus.ariaLabel = `Adicionar gol de ${team}`; plus.disabled = value >= 99; }
+  };
+
+  const renderActions = (actions: HTMLElement, match: Match) => {
+    actions.replaceChildren(); actions.dataset.status = match.status;
+    if (match.status === "SCHEDULED") actions.append(actionButton("INICIAR AGORA", "iniciar"));
+    if (match.status === "IN_PROGRESS") {
+      actions.append(scoreControl(match, "HOME"), scoreControl(match, "AWAY"));
+      actions.append(actionButton("ENCERRAR AGORA", "encerrar"));
+    }
+    if (["SCHEDULED", "IN_PROGRESS"].includes(match.status)) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "admin-cancel-trigger"; button.textContent = "CANCELAR"; button.dataset.matchAction = "cancelar"; actions.append(button);
+    } else if (match.status === "CANCELED") {
+      actions.className = "admin-match-refund";
+      const audit = document.createElement("div"); audit.className = "admin-match-refund";
+      const reason = document.createElement("small"); reason.textContent = match.cancelReason || "Cancelada";
+      const progress = document.createElement("span"); progress.textContent = "ESTORNOS: CONSULTANDO";
+      const retry = document.createElement("button"); retry.type = "button"; retry.className = "admin-cancel-trigger"; retry.textContent = "REPROCESSAR ESTORNOS"; retry.hidden = true; retry.dataset.matchAction = "retry-refunds";
+      audit.append(reason, progress, retry); actions.append(audit); void pollRefunds(match.id, progress, retry);
+    } else {
+      actions.className = "admin-match-actions";
+    }
+  };
+
+  const updateMatchRow = (row: HTMLElement, match: Match) => {
+    const scoreValue = `${match.teamHomeScore}:${match.teamAwayScore}`;
+    const status = row.querySelector<HTMLElement>('[data-role="status"]')!;
+    const statusClass = `admin-status admin-status--${match.status.toLowerCase()}`;
+    if (status.className !== statusClass) status.className = statusClass;
+    updateText(status, matchStatusLabel(match.status));
+    updateText(row.querySelector('[data-role="teams"]'), `${match.teamHome} × ${match.teamAway}`);
+    updateText(row.querySelector('[data-role="start"]'), `Início previsto: ${formatter.format(new Date(match.start))}`);
+    updateText(row.querySelector('[data-role="end"]'), match.status === "FINISHED" && match.end ? `Encerrada em: ${formatter.format(new Date(match.end))}` : `Término previsto: ${formatter.format(new Date(match.expectedEnd))}`);
+    const score = row.querySelector<HTMLElement>('[data-role="score"]')!;
+    const scoreHidden = match.status === "SCHEDULED";
+    if (score.hidden !== scoreHidden) score.hidden = scoreHidden;
+    updateScore(row, score, scoreValue, `${match.teamHomeScore} × ${match.teamAwayScore}`);
+    const actions = row.querySelector<HTMLElement>('[data-role="actions"]')!;
+    if (actions.dataset.status !== match.status) {
+      actions.className = "admin-match-actions"; renderActions(actions, match);
+    } else if (match.status === "IN_PROGRESS") {
+      actions.querySelectorAll<HTMLElement>("[data-score-side]").forEach((control) => syncScoreControl(control, match));
+    }
+  };
+
+  list?.addEventListener("click", async (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>("[data-match-action]");
+    const row = button?.closest<HTMLElement>("[data-match-id]");
+    const match = row?.dataset.matchId ? matchesById.get(row.dataset.matchId) : undefined;
+    if (!button || !match) return;
+    const action = button.dataset.matchAction;
+    const side = button.dataset.side as "HOME" | "AWAY" | undefined;
+    if (action === "cancelar") {
+      selectedMatch = match; cancelKey = undefined; document.querySelector<HTMLElement>("[data-cancel-match-label]")!.textContent = `${match.teamHome} × ${match.teamAway}`; dialog?.showModal(); return;
+    }
+    if (action === "retry-refunds") {
+      button.disabled = true; const response = await authenticatedFetch(`/admin/partidas/${match.id}/refunds/retry`, { method: "POST" }); button.disabled = false;
+      const progress = row?.querySelector<HTMLElement>(".admin-match-refund span");
+      if (response.ok && progress) { button.hidden = true; progress.textContent = "ESTORNOS: REPROCESSANDO"; void pollRefunds(match.id, progress, button); }
+      return;
+    }
+    if (action === "gol") {
+      void sendCommand(match, "gol", side).catch((error) => { const known = error instanceof Error && !/fetch|network|load failed/i.test(error.message) ? error.message : undefined; if (message) message.textContent = known || "Não foi possível adicionar o gol."; }); return;
+    }
+    if (action === "iniciar" || action === "encerrar" || action === "anular") confirmCommand(match, action, side);
+  });
   const confirmCommand = (match: Match, action: "iniciar" | "encerrar" | "anular", side?: "HOME" | "AWAY") => {
     selectedMatch = match; selectedCommand = { action, side };
     const team = side === "HOME" ? match.teamHome : match.teamAway;
@@ -166,7 +243,13 @@ import AdminShell from "../../components/templates/AdminShell.astro";
       const response = await authenticatedFetch(`/admin/partidas/${match.id}/${path}`, options);
       if (!response.ok) throw new Error(await readApiError(response, "Não foi possível atualizar a partida."));
       retryKeys.delete(commandId); await loadMatches();
-    } finally { controls.forEach((item) => item.disabled = false); }
+    } finally {
+      controls.forEach((item) => { if (item.isConnected) item.disabled = false; });
+      document.querySelectorAll<HTMLElement>("[data-match-id]").forEach((row) => {
+        const current = row.dataset.matchId ? matchesById.get(row.dataset.matchId) : undefined;
+        if (current) row.querySelectorAll<HTMLElement>("[data-score-side]").forEach((control) => syncScoreControl(control, current));
+      });
+    }
   };
 
   const pollRefunds = async (matchId: string, target: HTMLElement, retry?: HTMLButtonElement) => {
@@ -239,8 +322,8 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     } finally { submitter.disabled = false; }
   });
   cancelForm?.querySelector("textarea")?.addEventListener("input", () => { cancelKey = undefined; });
-  filter?.addEventListener("change", () => void loadMatches());
+  filter?.addEventListener("change", () => void loadMatches(true));
   window.setInterval(() => { if (document.visibilityState === "visible") void loadMatches(); }, 5000);
-  if (document.querySelector("[data-admin-shell]:not([hidden])")) void loadMatches();
-  else window.addEventListener("admin:ready", () => void loadMatches(), { once: true });
+  if (document.querySelector("[data-admin-shell]:not([hidden])")) void loadMatches(true);
+  else window.addEventListener("admin:ready", () => void loadMatches(true), { once: true });
 </script>

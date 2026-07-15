@@ -65,6 +65,7 @@ import UserShell from "../components/templates/UserShell.astro";
   import { authenticatedFetch, createIdempotencyKey } from "../scripts/session";
   import { formatCents, refreshWallet } from "../scripts/user";
   import { matchStatusLabel, readApiError } from "../scripts/presentation";
+  import { reconcileMatchesById, updateScore, updateText } from "../scripts/keyed-reconcile";
 
   type Match = { id: string; teamHome: string; teamAway: string; teamHomeScore: number; teamAwayScore: number; start: string; durationMinutes: number; expectedEnd: string; startedAt?: string; end?: string; status: string; bettingOpen: boolean };
   type Page = { items: Match[]; page: number; size: number; total: number };
@@ -72,6 +73,9 @@ import UserShell from "../components/templates/UserShell.astro";
   type Bet = { bet_id: string; status: BetStatus };
   let currentView = "OPEN"; let currentPage = 0; let total = 0; let selected: Match | undefined;
   let loadingMatches = false;
+  let pendingLoadMode: "initial" | "append" | "poll" | undefined;
+  const loadedPages = new Map<number, Match[]>();
+  const matchesById = new Map<string, Match>();
   let pending: { home: number; away: number; stakeCents: number; key: string } | undefined;
   const list = document.querySelector<HTMLElement>("[data-match-list]");
   const state = document.querySelector<HTMLElement>("[data-match-state]");
@@ -108,61 +112,122 @@ import UserShell from "../components/templates/UserShell.astro";
     input.addEventListener("change", () => syncGoalStepper(input, true));
     syncGoalStepper(input, true);
   });
-  const renderMatch = (match: Match) => {
+  const createMatchCard = () => {
     const article = document.createElement("article"); article.className = "user-match-card";
     const meta = document.createElement("div"); meta.className = "user-match-card__meta";
-    const badge = document.createElement("span"); badge.dataset.status = match.status.toLowerCase(); badge.textContent = matchStatusLabel(match.status);
-    const time = document.createElement("time"); time.dateTime = match.start; time.textContent = dateTime.format(new Date(match.start)); meta.append(badge, time);
+    const badge = document.createElement("span"); badge.dataset.role = "status";
+    const time = document.createElement("time"); time.dataset.role = "start"; meta.append(badge, time);
     const teams = document.createElement("div"); teams.className = "user-match-card__teams";
-    const home = document.createElement("strong"); home.textContent = match.teamHome;
-    const score = document.createElement("b"); score.textContent = match.status === "SCHEDULED" ? "×" : `${match.teamHomeScore} × ${match.teamAwayScore}`;
-    const away = document.createElement("strong"); away.textContent = match.teamAway; teams.append(home, score, away);
-    const timing = document.createElement("p"); timing.className = "user-match-card__timing";
-    if (match.status === "FINISHED" && match.end) timing.textContent = `Encerramento efetivo: ${dateTime.format(new Date(match.end))}`;
-    else if (match.status === "IN_PROGRESS") timing.textContent = `Término previsto: ${dateTime.format(new Date(match.expectedEnd))}`;
-    else timing.textContent = `Término previsto: ${dateTime.format(new Date(match.expectedEnd))}`;
-    const footer = document.createElement("footer");
-    if (match.bettingOpen) {
-      const button = document.createElement("button"); button.type = "button"; button.className = "user-primary-action"; button.textContent = "FAZER PALPITE";
-      button.addEventListener("click", () => openBet(match)); footer.append(button);
-    } else { const closed = document.createElement("span"); closed.textContent = match.status === "FINISHED" ? "Aguardando apuração" : "Palpites encerrados"; footer.append(closed); }
+    const home = document.createElement("strong"); home.dataset.role = "home";
+    const score = document.createElement("b"); score.dataset.role = "score";
+    const away = document.createElement("strong"); away.dataset.role = "away"; teams.append(home, score, away);
+    const timing = document.createElement("p"); timing.className = "user-match-card__timing"; timing.dataset.role = "timing";
+    const footer = document.createElement("footer"); footer.dataset.role = "footer";
     article.append(meta, teams, timing, footer); return article;
   };
 
-  const loadMatches = async (append = false) => {
-    if (loadingMatches) return;
-    loadingMatches = true;
-    if (!append) { currentPage = 0; list?.replaceChildren(); }
-    if (state) { state.hidden = false; state.textContent = "Carregando partidas…"; }
-    try {
-      const response = await authenticatedFetch(`/partidas/catalog?view=${currentView}&page=${currentPage}&size=12`);
-      if (!response.ok) throw new Error("Não foi possível carregar as partidas.");
-      const page = await response.json() as Page; total = page.total;
-      page.items.forEach((match) => list?.append(renderMatch(match)));
-      const count = list?.children.length || 0;
-      if (state) { state.hidden = count > 0; state.textContent = "Nenhuma partida encontrada neste filtro."; }
-      if (more) more.hidden = count >= total;
-      if (selected) {
-        const selectedResponse = await authenticatedFetch(`/partidas/${selected.id}`);
-        if (selectedResponse.ok) {
-          const updated = await selectedResponse.json() as Match;
-          if (!updated.bettingOpen && dialog?.open) {
-            selected = undefined; pending = undefined; dialog.close();
-            const notice = document.querySelector<HTMLElement>("[data-match-notice]");
-            if (notice) notice.textContent = "Palpites encerrados para esta partida";
-          }
-        }
-      }
-    } catch (error) { if (state) { state.hidden = false; state.textContent = error instanceof Error ? error.message : "Erro inesperado."; } }
-    finally { loadingMatches = false; }
+  const updateMatchCard = (article: HTMLElement, match: Match) => {
+    const badge = article.querySelector<HTMLElement>('[data-role="status"]')!;
+    const badgeStatus = match.status.toLowerCase();
+    if (badge.dataset.status !== badgeStatus) badge.dataset.status = badgeStatus;
+    updateText(badge, matchStatusLabel(match.status));
+    const time = article.querySelector<HTMLTimeElement>('[data-role="start"]')!;
+    if (time.dateTime !== match.start) time.dateTime = match.start; updateText(time, dateTime.format(new Date(match.start)));
+    updateText(article.querySelector('[data-role="home"]'), match.teamHome);
+    updateText(article.querySelector('[data-role="away"]'), match.teamAway);
+    const score = article.querySelector<HTMLElement>('[data-role="score"]')!;
+    const scoreValue = `${match.teamHomeScore}:${match.teamAwayScore}`;
+    updateScore(article, score, scoreValue, match.status === "SCHEDULED" ? "×" : `${match.teamHomeScore} × ${match.teamAwayScore}`);
+    updateText(article.querySelector('[data-role="timing"]'), match.status === "FINISHED" && match.end
+      ? `Encerramento efetivo: ${dateTime.format(new Date(match.end))}`
+      : `Término previsto: ${dateTime.format(new Date(match.expectedEnd))}`);
+    const footer = article.querySelector<HTMLElement>('[data-role="footer"]')!;
+    const footerState = match.bettingOpen ? "open" : match.status === "FINISHED" ? "settlement" : "closed";
+    if (footer.dataset.state !== footerState) {
+      footer.replaceChildren(); footer.dataset.state = footerState;
+      if (match.bettingOpen) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "user-primary-action"; button.textContent = "FAZER PALPITE"; button.dataset.matchAction = "bet"; footer.append(button);
+      } else { const closed = document.createElement("span"); closed.textContent = match.status === "FINISHED" ? "Aguardando apuração" : "Palpites encerrados"; footer.append(closed); }
+    }
   };
+
+  const reconcileMatches = () => {
+    if (!list) return;
+    const items = Array.from(loadedPages.entries()).sort(([left], [right]) => left - right).flatMap(([, matches]) => matches);
+    matchesById.clear(); items.forEach((match) => matchesById.set(match.id, match));
+    reconcileMatchesById(list, items, { key: (match) => match.id, create: createMatchCard, update: updateMatchCard });
+    const count = items.length;
+    if (state) { state.classList.remove("user-list-state--warning"); state.hidden = count > 0; state.textContent = "Nenhuma partida encontrada neste filtro."; }
+    if (more) more.hidden = count >= total;
+  };
+
+  const fetchMatchPage = async (page: number, view: string) => {
+    const response = await authenticatedFetch(`/partidas/catalog?view=${view}&page=${page}&size=12`);
+    if (!response.ok) throw new Error("Não foi possível carregar as partidas.");
+    return response.json() as Promise<Page>;
+  };
+
+  const validateSelectedMatch = async () => {
+    if (!selected) return;
+    const selectedResponse = await authenticatedFetch(`/partidas/${selected.id}`);
+    if (!selectedResponse.ok) return;
+    const updated = await selectedResponse.json() as Match;
+    if (!updated.bettingOpen && dialog?.open) {
+      selected = undefined; pending = undefined; dialog.close();
+      const notice = document.querySelector<HTMLElement>("[data-match-notice]");
+      if (notice) notice.textContent = "Palpites encerrados para esta partida";
+    }
+  };
+
+  const loadMatches = async (mode: "initial" | "append" | "poll" = "initial") => {
+    if (loadingMatches) {
+      if (mode === "initial" || (mode === "append" && pendingLoadMode === "poll") || !pendingLoadMode) pendingLoadMode = mode;
+      return;
+    }
+    loadingMatches = true;
+    const requestedView = currentView;
+    if (mode === "initial") {
+      currentPage = 0; total = 0; loadedPages.clear(); list?.replaceChildren();
+      if (state) { state.hidden = false; state.textContent = "Carregando partidas…"; }
+      if (more) more.hidden = true;
+    }
+    try {
+      if (mode === "poll") {
+        const refreshed = new Map<number, Match[]>();
+        for (let pageNumber = 0; pageNumber <= currentPage; pageNumber += 1) {
+          const page = await fetchMatchPage(pageNumber, requestedView); total = page.total; refreshed.set(pageNumber, page.items);
+        }
+        if (requestedView !== currentView) { pendingLoadMode = "initial"; return; }
+        loadedPages.clear(); refreshed.forEach((items, pageNumber) => loadedPages.set(pageNumber, items));
+      } else {
+        const pageNumber = mode === "append" ? currentPage + 1 : 0;
+        const page = await fetchMatchPage(pageNumber, requestedView);
+        if (requestedView !== currentView) { pendingLoadMode = "initial"; return; }
+        total = page.total; loadedPages.set(pageNumber, page.items); currentPage = pageNumber;
+      }
+      reconcileMatches(); await validateSelectedMatch();
+    } catch (error) {
+      if (state) { state.classList.toggle("user-list-state--warning", mode === "poll"); state.hidden = false; state.textContent = mode === "poll" ? "Não foi possível atualizar agora. Tentaremos novamente." : error instanceof Error ? error.message : "Erro inesperado."; }
+    }
+    finally {
+      loadingMatches = false;
+      if (pendingLoadMode) { const pendingMode = pendingLoadMode; pendingLoadMode = undefined; void loadMatches(pendingMode); }
+    }
+  };
+
+  list?.addEventListener("click", (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>('[data-match-action="bet"]');
+    const card = button?.closest<HTMLElement>("[data-match-id]");
+    const match = card?.dataset.matchId ? matchesById.get(card.dataset.matchId) : undefined;
+    if (match) openBet(match);
+  });
 
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => button.addEventListener("click", () => {
     currentView = button.dataset.view || "OPEN";
     document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-    void loadMatches();
+    void loadMatches("initial");
   }));
-  more?.addEventListener("click", () => { currentPage += 1; void loadMatches(true); });
+  more?.addEventListener("click", () => void loadMatches("append"));
 
   const showStep = (step: "form" | "review" | "result") => {
     if (form) form.hidden = step !== "form"; if (review) review.hidden = step !== "review"; if (result) result.hidden = step !== "result";
@@ -222,8 +287,8 @@ import UserShell from "../components/templates/UserShell.astro";
   });
   const closeDialog = () => dialog?.close(); document.querySelector("[data-bet-close]")?.addEventListener("click", closeDialog); document.querySelector("[data-bet-done]")?.addEventListener("click", closeDialog);
 
-  window.setInterval(() => { if (document.visibilityState === "visible") void loadMatches(); }, 5000);
+  window.setInterval(() => { if (document.visibilityState === "visible") void loadMatches("poll"); }, 5000);
 
-  const start = () => void loadMatches();
+  const start = () => void loadMatches("initial");
   if (document.querySelector("[data-user-shell]:not([hidden])")) start(); else window.addEventListener("user:ready", start, { once: true });
 </script>
