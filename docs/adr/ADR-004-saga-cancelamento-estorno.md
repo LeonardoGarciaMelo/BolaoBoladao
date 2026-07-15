@@ -21,6 +21,12 @@ O fluxo é uma saga coreografada:
 
 Comandos HTTP de cancelamento também exigem `Idempotency-Key`; repetir a mesma chave retorna o cancelamento existente sem novo evento. Criação de palpite e consumo de cancelamento usam a mesma trava transacional por partida para impedir palpites confirmados após o cancelamento.
 
+## Alternativas consideradas
+
+- **Saga orquestrada (orchestrator central)**: um serviço coordenador gerenciaria cada passo do estorno e os retries. Ofereceria rastreamento centralizado, mas introduziria um ponto único de falha e um novo serviço para manter. Rejeitada por aumentar a complexidade operacional sem benefício proporcional para este escopo.
+- **Compensação síncrona por HTTP (Apostas chama Carteira via REST)**: mais simples de raciocinar, mas acoplaria temporalmente os dois serviços — se a Carteira estivesse indisponível no instante do cancelamento, todo o fluxo falharia. Rejeitada por fragilidade e por violar a comunicação assíncrona exigida no critério 2.
+- **Não compensar e apenas bloquear novos palpites**: evitaria toda a complexidade de estorno, mas deixaria dinheiro preso na Carteira sem devolução, o que seria inaceitável em um domínio financeiro. Rejeitada por violar a integridade do saldo do usuário.
+
 ## Consequências
 
 O sistema aceita consistência eventual e exibe o progresso em vez de declarar sucesso prematuro. Falhas permanecem visíveis e reprocessáveis. O armazenamento de deduplicação e outbox cresce e precisará de retenção operacional futura.
