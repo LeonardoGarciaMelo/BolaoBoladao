@@ -64,18 +64,11 @@ documentado abaixo.
 
 ## Como rodar a plataforma completa
 
-Gere um par RSA somente para desenvolvimento. A chave privada não deve ser
-versionada nem compartilhada fora do ambiente local.
+O projeto possui um serviço de inicialização (`init-secrets`) que gera automaticamente as chaves RSA e senhas temporárias de desenvolvimento no primeiro uso, sem que você precise expor credenciais no repositório.
+
+Basta rodar:
 
 ```bash
-mkdir -p .secrets
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .secrets/jwt-private.pem
-openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
-openssl rand -base64 24 > .secrets/admin-password
-openssl rand -hex 32 > .secrets/payment-merchant-api-key
-openssl rand -hex 32 > .secrets/payment-webhook-secret
-openssl rand -hex 64 > .secrets/payment-secret-key-base
-chmod 600 .secrets/payment-*
 docker compose up --build
 ```
 
