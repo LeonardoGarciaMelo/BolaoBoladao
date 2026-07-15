@@ -44,6 +44,7 @@ implementados. A apuração e o pagamento de prêmios continuam fora do escopo.
 | `web` | ✅ implementado | Astro + Nginx | interna (80) |
 | `carteira-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Redis + Kafka | interna (8080) |
 | `apostas-service` | ✅ implementado | FastAPI (Python 3.12) + PostgreSQL + Kafka | interna (8000) |
+| `payment-simulator` | ✅ implementado | Elixir 1.20.1/OTP 28 + Phoenix 1.8.9 + Oban + PostgreSQL | local (127.0.0.1:4000) |
 
 ## Perfis de execução
 
@@ -70,12 +71,17 @@ mkdir -p .secrets
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out .secrets/jwt-private.pem
 openssl pkey -in .secrets/jwt-private.pem -pubout -out .secrets/jwt-public.pem
 openssl rand -base64 24 > .secrets/admin-password
+openssl rand -hex 32 > .secrets/payment-merchant-api-key
+openssl rand -hex 32 > .secrets/payment-webhook-secret
+openssl rand -hex 64 > .secrets/payment-secret-key-base
+chmod 600 .secrets/payment-*
 docker compose up --build
 ```
 
 A web e a API estarão em `http://localhost:8080`: o gateway entrega a
-interface e encaminha as chamadas sob `/api`. Nenhum backend HTTP além do
-gateway publica porta no host quando executado pelo Compose.
+interface e encaminha as chamadas sob `/api`. Nenhum dos quatro contextos
+centrais publica porta HTTP no host além do gateway; o simulador externo é a
+exceção local e fica restrito a `127.0.0.1:4000`.
 
 Este incremento altera a identidade dos eventos de Partidas e as projeções
 derivadas em Apostas. Não há backfill dos dados anteriores. Em desenvolvimento,
@@ -88,6 +94,10 @@ docker volume rm bolaoboladao_partidas_db_data bolaoboladao_apostas_db_data
 docker compose up --build -d
 docker compose --profile tools up -d pgadmin
 ```
+
+O sistema de depósitos usa migrações incrementais próprias e não exige apagar
+nenhum volume. Em especial, `carteira_db_data`, `user_db_data`,
+`payment_simulator_db_data` e `pgadmin_data` devem ser preservados.
 
 O fluxo é cadastro (`POST /api/auth/register`) → login
 (`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
@@ -125,6 +135,7 @@ Cadastre os servidores na porta `5432`, usando usuário e senha `bolao`:
 | Carteira | `carteira-db` | `carteira_db` |
 | Apostas | `apostas-db` | `apostas_db` |
 | Usuários | `user-db` | `user_db` |
+| Boladão Pay Sandbox | `payment-simulator-db` | `payment_simulator_db` |
 
 O volume `pgadmin_data` preserva os servidores cadastrados entre reinícios.
 
@@ -152,7 +163,8 @@ docker compose --profile tools up -d pgadmin kafbat-ui
 
 Após o login, usuários comuns seguem para `/partidas`. O shell autenticado é
 compartilhado por `/partidas`, `/palpites`, `/carteira` e `/perfil`; exibe saldo,
-atalho de adição de saldo (somente diálogo “Em breve”) e menu da conta.
+abre o depósito PIX fictício em duas etapas e mantém o menu da conta. O checkout
+standalone fica em `/pagamento` e deixa explícito que nenhuma cobrança é real.
 
 | Método | Rota | Descrição |
 |---|---|---|
@@ -162,6 +174,10 @@ atalho de adição de saldo (somente diálogo “Em breve”) e menu da conta.
 | `GET` | `/api/bets/{id}` | Consulta um palpite do usuário autenticado |
 | `GET` | `/api/wallet/me` | Obtém ou cria a carteira e retorna saldo em centavos |
 | `GET` | `/api/wallet/me/statement?page=0&size=10` | Extrato paginado do usuário autenticado |
+| `POST` | `/api/wallet/me/deposits` | Cria ou retoma depósito; exige `Idempotency-Key` |
+| `GET` | `/api/wallet/me/deposits?page=0&size=10` | Lista solicitações de depósito do proprietário |
+| `GET` | `/api/wallet/me/deposits/{id}` | Consulta depósito sem revelar registros de outro usuário |
+| `POST` | `/api/wallet/me/deposits/{id}/reconcile` | Consulta o provedor e reaplica o resultado idempotentemente |
 
 Vários palpites para a mesma partida, inclusive idênticos, são permitidos. A
 janela fecha no início previsto ou quando a partida deixa `SCHEDULED`, o que
@@ -206,6 +222,7 @@ mvn -pl partidas-service -am -PC test -Dtest='!*ResourceTest'
 ```bash
 docker compose --profile test run --rm backend-tests
 docker compose --profile test run --build --rm apostas-tests
+docker compose --profile test run --build --rm payment-simulator-tests
 docker compose --profile test run --rm web-e2e
 ```
 
@@ -247,5 +264,6 @@ bolao-boladao/
 ├── web/                     # ✅ implementado
 ├── apostas-service/         # ✅ versão inicial (FastAPI)
 ├── carteira-service/        # ✅ implementado
+├── payment-simulator/       # ✅ provedor PIX fictício externo (Phoenix/Oban)
 └── pom.xml                  # parent, multi-módulo, profiles A/B/C
 ```

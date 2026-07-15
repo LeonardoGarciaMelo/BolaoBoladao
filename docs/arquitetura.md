@@ -25,11 +25,18 @@
                          ┌─────────────┐
                          │    Kafka    │◀── barramento de eventos entre
                          └─────────────┘    os serviços acima
+
+ Carteira ──HTTP──▶ Boladão Pay Sandbox (Phoenix + Postgres + Oban)
+ Carteira ◀─webhook HMAC───────────────────────────────────────┘
 ```
 
 Cada serviço possui sua própria base relacional — não há acesso direto de um
 serviço ao banco de outro (ADR-001). A comunicação entre domínios acontece
 via eventos publicados no Kafka.
+
+O Boladão Pay Sandbox fica fora dos quatro bounded contexts. Ele simula um
+provedor externo por HTTP/webhook e possui banco próprio, mas nunca acessa os
+schemas centrais e não participa do barramento Kafka.
 
 ## Autenticação e borda HTTP
 
@@ -136,6 +143,27 @@ débito de palpite e é idempotente por `betId`.
 autenticado e retorna o saldo em centavos. `GET /wallet/me/statement` pagina o
 ledger desse mesmo usuário, sem receber `userId` ou `walletId` do cliente. A
 decisão de débito continua assíncrona e serializada por carteira.
+
+### Depósitos PIX fictícios
+
+A criação de depósito é dividida em duas fases: a Carteira persiste
+`CREATING`, chama `POST /api/v1/merchant/charges` com a chave externa estável
+`deposit:<depositId>` e então anexa cobrança, checkout e expiração em
+`PENDING`. Um timeout não apaga a solicitação; retry e reconciliação retomam a
+mesma cobrança.
+
+```
+Web -> Gateway -> Carteira -> Boladão Pay Sandbox
+                         <- webhook PAID/REFUSED/EXPIRED
+                 lock carteira + validar referência/valor
+                 PAID -> DEPOSIT/CREDIT exatamente uma vez
+```
+
+Webhook e `POST /wallet/me/deposits/{id}/reconcile` usam o mesmo processador
+transacional. `PAID` cria o ledger com `deposit-credit:<depositId>`;
+`REFUSED` e `EXPIRED` apenas encerram a solicitação. O token do checkout fica
+no fragmento da URL e é enviado ao provedor como `Authorization: Checkout`,
+sem passar por logs HTTP. A decisão está no [ADR-005](adr/ADR-005-provedor-pagamento-sandbox.md).
 
 ## Domínio: Apostas (implementado)
 

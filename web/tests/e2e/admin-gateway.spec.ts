@@ -195,9 +195,17 @@ test("partida criada pelo admin fica disponível para palpite com saldo", async 
   expect(userLogin.ok()).toBe(true);
   const userToken = (await userLogin.json()).accessToken;
   const userHeaders = { Authorization: `Bearer ${userToken}` };
-  const catalog = await request.get("/api/partidas/catalog?view=OPEN&page=0&size=50", { headers: userHeaders });
-  expect(catalog.ok()).toBe(true);
-  expect((await catalog.json()).items).toEqual(expect.arrayContaining([expect.objectContaining({ id: createdMatch.id, bettingOpen: true })]));
+  let catalogPage = 0;
+  let catalogMatch: { id: string; bettingOpen: boolean } | undefined;
+  do {
+    const catalog = await request.get(`/api/partidas/catalog?view=OPEN&page=${catalogPage}&size=50`, { headers: userHeaders });
+    expect(catalog.ok()).toBe(true);
+    const body = await catalog.json();
+    catalogMatch = body.items.find((item: { id: string }) => item.id === createdMatch.id);
+    if (catalogMatch || (catalogPage + 1) * body.size >= body.total) break;
+    catalogPage += 1;
+  } while (true);
+  expect(catalogMatch).toEqual(expect.objectContaining({ id: createdMatch.id, bettingOpen: true }));
 
   let betBody: any;
   await expect.poll(async () => {

@@ -38,6 +38,14 @@ const WALLET_OPERATION: Record<string, string> = {
   DEBIT: "Débito",
 };
 
+const DEPOSIT_STATUS: Record<string, string> = {
+  CREATING: "PREPARANDO",
+  PENDING: "AGUARDANDO PAGAMENTO",
+  CONFIRMED: "CONFIRMADO",
+  REFUSED: "RECUSADO",
+  EXPIRED: "EXPIRADO",
+};
+
 const ACTIVITY_EVENT: Record<string, string> = {
   MATCH_CREATED: "Partida criada",
   MATCH_CANCELED: "Partida cancelada",
@@ -66,6 +74,7 @@ export const betStatusLabel = (status: unknown) => BET_STATUS[normalizeCode(stat
 export const refundStatusLabel = (status: unknown) => REFUND_STATUS[normalizeCode(status)] ?? "STATUS DESCONHECIDO";
 export const walletReasonLabel = (reason: unknown) => WALLET_REASON[normalizeCode(reason)] ?? "Movimentação";
 export const walletOperationLabel = (operation: unknown) => WALLET_OPERATION[normalizeCode(operation)] ?? "Operação";
+export const depositStatusLabel = (status: unknown) => DEPOSIT_STATUS[normalizeCode(status)] ?? "STATUS DESCONHECIDO";
 export const activityEventLabel = (type: unknown) => ACTIVITY_EVENT[normalizeCode(type)] ?? "Evento administrativo";
 
 const rawApiMessage = (payload: unknown): string => {

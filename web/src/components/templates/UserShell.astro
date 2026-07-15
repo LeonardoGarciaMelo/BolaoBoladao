@@ -1,6 +1,7 @@
 ---
 import BrandLogo from "../molecules/BrandLogo.astro";
 import Icon from "../atoms/Icon.astro";
+import DepositDialog from "../organisms/DepositDialog.astro";
 
 interface Props {
   active: "matches" | "bets" | "wallet" | "profile";
@@ -54,14 +55,7 @@ const primaryLinks = [
   <a href="/login">VOLTAR AO LOGIN</a>
 </section>
 
-<dialog class="user-dialog user-coming-soon" data-balance-dialog>
-  <div class="user-dialog__surface">
-    <span class="user-dialog__eyebrow">CARTEIRA DIGITAL</span>
-    <h2>Adicionar saldo</h2>
-    <p>O serviço de pagamento está chegando. Por enquanto, nenhum valor será movimentado por aqui.</p>
-    <button class="user-primary-action" type="button" data-balance-dialog-close>ENTENDI</button>
-  </div>
-</dialog>
+<DepositDialog />
 
 <script>
   import { clearAccessToken, getCurrentUser } from "../../scripts/session";
@@ -72,7 +66,6 @@ const primaryLinks = [
   const error = document.querySelector<HTMLElement>("[data-user-error]");
   const avatar = document.querySelector<HTMLButtonElement>("[data-avatar-trigger]");
   const menu = document.querySelector<HTMLElement>("[data-account-menu]");
-  const balanceDialog = document.querySelector<HTMLDialogElement>("[data-balance-dialog]");
 
   const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U";
   const renderWallet = (wallet: WalletSummary) => {
@@ -101,9 +94,6 @@ const primaryLinks = [
   document.querySelector("[data-user-logout]")?.addEventListener("click", () => {
     clearAccessToken(); window.location.assign("/login");
   });
-  document.querySelectorAll("[data-add-balance]").forEach((button) => button.addEventListener("click", () => balanceDialog?.showModal()));
-  document.querySelector("[data-balance-dialog-close]")?.addEventListener("click", () => balanceDialog?.close());
-
   try {
     const [user, wallet] = await Promise.all([getCurrentUser(), getWalletSummary()]);
     document.querySelectorAll<HTMLElement>("[data-user-name]").forEach((target) => target.textContent = user.name);

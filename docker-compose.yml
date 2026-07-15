@@ -112,11 +112,65 @@ services:
       timeout: 5s
       retries: 5
 
+  payment-simulator-db:
+    image: postgres:16-alpine
+    container_name: bolao-payment-simulator-db
+    environment:
+      POSTGRES_DB: payment_simulator_db
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    expose:
+      - "5432"
+    volumes:
+      - payment_simulator_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d payment_simulator_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  payment-simulator:
+    build:
+      context: ./payment-simulator
+      dockerfile: Dockerfile
+    container_name: bolao-payment-simulator
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    environment:
+      ELIXIR_ERL_OPTIONS: "+fnu"
+      PHX_SERVER: "true"
+      PHX_HOST: localhost
+      PHX_SCHEME: http
+      PORT: 4000
+      DATABASE_URL: ecto://bolao:bolao@payment-simulator-db/payment_simulator_db
+      SECRET_KEY_BASE_FILE: /run/secrets/payment-secret-key-base
+      PAYMENT_MERCHANT_API_KEY_FILE: /run/secrets/payment-merchant-api-key
+      PAYMENT_WEBHOOK_SECRET_FILE: /run/secrets/payment-webhook-secret
+      PAYMENT_WEBHOOK_URL: http://carteira-service:8080/wallet/webhooks/boladao-pay
+      PAYMENT_CHECKOUT_BASE_URL: http://localhost:8080/pagamento
+      PAYMENT_RETURN_ORIGINS: http://localhost:8080
+      PAYMENT_CORS_ORIGINS: http://localhost:8080,http://localhost:4321,http://api-gateway:8080
+      PAYMENT_CHARGE_TTL_SECONDS: 900
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./.secrets/payment-secret-key-base:/run/secrets/payment-secret-key-base:ro
+      - ./.secrets/payment-merchant-api-key:/run/secrets/payment-merchant-api-key:ro
+      - ./.secrets/payment-webhook-secret:/run/secrets/payment-webhook-secret:ro
+    depends_on:
+      payment-simulator-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   carteira-service:
     build:
       context: ./carteira-service
       dockerfile: Dockerfile
     container_name: bolao-carteira-service
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     environment:
       QUARKUS_DATASOURCE_REACTIVE_URL: postgresql://carteira-db:5432/carteira_db
       QUARKUS_DATASOURCE_USERNAME: bolao
@@ -127,16 +181,25 @@ services:
       JWT_ISSUER: bolao-user-service
       JWT_AUDIENCE: bolao-api
       ADMIN_CREDIT_MAX_CENTS: 1000000
+      PAYMENT_PROVIDER_URL: http://payment-simulator:4000/api/v1
+      PAYMENT_MERCHANT_API_KEY_FILE: /run/secrets/payment-merchant-api-key
+      PAYMENT_WEBHOOK_SECRET_FILE: /run/secrets/payment-webhook-secret
+      DEPOSIT_MIN_CENTS: 100
+      DEPOSIT_MAX_CENTS: 1000000
     expose:
       - "8080"
     volumes:
       - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - ./.secrets/payment-merchant-api-key:/run/secrets/payment-merchant-api-key:ro
+      - ./.secrets/payment-webhook-secret:/run/secrets/payment-webhook-secret:ro
     depends_on:
       carteira-db:
         condition: service_healthy
       carteira-cache:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      payment-simulator:
         condition: service_healthy
 
   apostas-db:
@@ -259,6 +322,7 @@ services:
       dockerfile: Dockerfile
       args:
         PUBLIC_API_BASE_URL: /api
+        PUBLIC_PAYMENT_PROVIDER_URL: http://localhost:4000/api/v1
     container_name: bolao-web
     expose:
       - "80"
@@ -285,6 +349,8 @@ services:
       apostas-db:
         condition: service_healthy
       user-db:
+        condition: service_healthy
+      payment-simulator-db:
         condition: service_healthy
 
   kafbat-ui:
@@ -329,6 +395,37 @@ services:
       interval: 2s
       timeout: 3s
       retries: 10
+
+  payment-simulator-test-db:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payment_simulator_test
+      POSTGRES_USER: bolao
+      POSTGRES_PASSWORD: bolao
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bolao -d payment_simulator_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+  payment-simulator-tests:
+    profiles: ["test"]
+    build:
+      context: ./payment-simulator
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      PAYMENT_TEST_DB_HOST: payment-simulator-test-db
+      PAYMENT_TEST_DB_PORT: 5432
+      PAYMENT_TEST_DB_USER: bolao
+      PAYMENT_TEST_DB_PASSWORD: bolao
+      PAYMENT_TEST_DB_NAME: payment_simulator_test
+    depends_on:
+      payment-simulator-test-db:
+        condition: service_healthy
 
   partidas-test-cache:
     profiles: ["test"]
@@ -404,3 +501,4 @@ volumes:
   pgadmin_data:
   maven_test_cache:
   pnpm_test_store:
+  payment_simulator_db_data:

@@ -8,6 +8,22 @@ Usuário operacional com role `ADMIN`. O JWT de um administrador contém os grup
 
 Crédito imutável na carteira, classificado como `ADMIN_CREDIT`. É diferente de depósito, prêmio ou bônus e sempre registra destinatário, administrador responsável, justificativa, instante, saldo anterior, valor e saldo posterior. Exige `Idempotency-Key`.
 
+## Depósito
+
+Entrada de saldo solicitada pelo próprio usuário. Só existe financeiramente quando a Carteira registra um lançamento imutável `DEPOSIT/CREDIT`; criar uma cobrança no provedor não altera o saldo.
+
+## Solicitação de depósito
+
+Registro da Carteira que coordena a preparação e confirmação de um depósito. Possui os estados `CREATING`, `PENDING`, `CONFIRMED`, `REFUSED` e `EXPIRED`, pertence a um único usuário e é idempotente pela combinação de usuário e `Idempotency-Key`.
+
+## Cobrança PIX fictícia
+
+Representação externa e temporária do pagamento no Boladão Pay Sandbox. Tem valor entre R$ 1,00 e R$ 10.000,00, expira em 15 minutos e termina como `PAID`, `REFUSED` ou `EXPIRED`. Ela não é saldo nem lançamento da Carteira.
+
+## Provedor de pagamento
+
+Sistema externo simulado que cria e consulta cobranças, hospeda o checkout e notifica a Carteira por webhook HMAC. Neste projeto é o `payment-simulator`; evitamos chamá-lo de “gateway” para não confundi-lo com o API Gateway.
+
 ## Cancelamento de partida
 
 Transição de uma partida `SCHEDULED` ou `IN_PROGRESS` para `CANCELED`, feita por administrador com justificativa. Registra `canceledAt`, `canceledBy` e um único evento `MATCH_CANCELED`. Uma partida `FINISHED` não pode ser cancelada.

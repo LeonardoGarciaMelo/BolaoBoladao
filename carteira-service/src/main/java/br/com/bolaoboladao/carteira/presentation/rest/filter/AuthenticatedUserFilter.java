@@ -15,6 +15,9 @@ public class AuthenticatedUserFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
+        if ("wallet/webhooks/boladao-pay".equals(requestContext.getUriInfo().getPath())) {
+            return;
+        }
         String header = requestContext.getHeaderString(AUTH_HEADER);
         if (header != null) {
             try {

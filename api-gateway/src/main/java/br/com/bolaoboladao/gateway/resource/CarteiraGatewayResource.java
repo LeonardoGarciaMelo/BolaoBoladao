@@ -6,11 +6,13 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
@@ -43,8 +45,25 @@ public class CarteiraGatewayResource {
         return forward(path, uriInfo);
     }
 
+    @POST
+    public Uni<Response> postRoot(String body, @Context UriInfo uriInfo, @Context HttpHeaders headers) {
+        return forwardPost("", uriInfo, body, headers.getHeaderString("Idempotency-Key"));
+    }
+
+    @POST
+    @Path("/{path: .+}")
+    public Uni<Response> post(@PathParam("path") String path, String body,
+                              @Context UriInfo uriInfo, @Context HttpHeaders headers) {
+        return forwardPost(path, uriInfo, body, headers.getHeaderString("Idempotency-Key"));
+    }
+
     private Uni<Response> forward(String path, UriInfo uriInfo) {
         return backendClient.get(target(path, uriInfo), authenticatedUserId())
+                .onItem().transform(GatewayResponses::from);
+    }
+
+    private Uni<Response> forwardPost(String path, UriInfo uriInfo, String body, String idempotencyKey) {
+        return backendClient.post(target(path, uriInfo), authenticatedUserId(), idempotencyKey, body)
                 .onItem().transform(GatewayResponses::from);
     }
 

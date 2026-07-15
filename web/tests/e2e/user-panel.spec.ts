@@ -23,6 +23,7 @@ async function mockUserApis(page: import("@playwright/test").Page) {
     if (url.pathname === "/api/auth/me") return route.fulfill({ json: { id: "user-1", name: "Ana Silva", username: "ana", roles: ["USER"] } });
     if (url.pathname === "/api/wallet/me") return route.fulfill({ json: { userId: "user-1", walletId: "wallet-1", balanceCents } });
     if (url.pathname === "/api/wallet/me/statement") return route.fulfill({ json: { items: [{ id: "entry-1", reason: "ADMIN_CREDIT", operation: "CREDIT", amountCents: 5000, occurredAt: new Date().toISOString(), note: "Boas-vindas" }, { id: "entry-2", reason: "BET", operation: "DEBIT", amountCents: 1000, occurredAt: new Date().toISOString() }], page: 0, size: 10, total: 2 } });
+    if (url.pathname === "/api/wallet/me/deposits") return route.fulfill({ json: { items: [], page: 0, size: 10, total: 0 } });
     if (url.pathname === "/api/partidas/catalog") return route.fulfill({ json: { items: [match], page: 0, size: 12, total: 1 } });
     if (url.pathname === "/api/bets" && route.request().method() === "POST") {
       submission += 1;
@@ -206,10 +207,101 @@ test("navega pelas quatro páginas, abre saldo e apresenta o extrato", async ({ 
   await expect(page.locator("[data-wallet-history]")).toContainText("Crédito administrativo");
   await expect(page.locator("[data-wallet-history]")).toContainText("− R$ 10,00");
   await page.getByRole("button", { name: "ADICIONAR SALDO" }).first().click();
-  await expect(page.getByRole("dialog")).toContainText("O serviço de pagamento está chegando");
-  await page.getByRole("button", { name: "ENTENDI" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Escolha quanto deseja adicionar");
+  await page.getByRole("button", { name: "Fechar" }).click();
 
   await page.locator("[data-avatar-trigger]").click();
   await page.getByRole("menuitem", { name: "Perfil" }).click();
   await expect(page.getByRole("heading", { name: "Ana Silva" })).toBeVisible();
+});
+
+test("modal de depósito revisa valor e encaminha chave idempotente", async ({ page }) => {
+  await mockUserApis(page);
+  let forwardedKey = "";
+  await page.route("**/api/wallet/me/deposits", async (route) => {
+    if (route.request().method() === "POST") {
+      forwardedKey = route.request().headers()["idempotency-key"];
+      expect(route.request().postDataJSON()).toEqual({ amountCents: 5000 });
+      return route.fulfill({ status: 201, json: { depositId: "deposit-1", amountCents: 5000, status: "PENDING", checkoutUrl: "/pagamento#checkout-token" } });
+    }
+    return route.fulfill({ json: { items: [], page: 0, size: 10, total: 0 } });
+  });
+  await page.route("**/api/v1/checkout", (route) => route.fulfill({ json: { chargeId: "charge-1", amountCents: 5000, status: "PENDING", returnUrl: "/carteira?depositId=deposit-1", expiresAt: new Date(Date.now() + 900_000).toISOString() } }));
+  await page.goto("/carteira");
+  await page.getByRole("button", { name: "ADICIONAR SALDO" }).first().click();
+  await page.getByRole("button", { name: "R$ 50,00" }).click();
+  await page.getByRole("button", { name: "REVISAR DEPÓSITO" }).click();
+  await expect(page.getByRole("dialog")).toContainText("PIX fictício");
+  await page.getByRole("button", { name: "IR PARA PAGAMENTO" }).click();
+  await expect(page).toHaveURL(/\/pagamento$/);
+  expect(forwardedKey).toBeTruthy();
+});
+
+test("checkout sandbox exibe QR fictício e simula pagamento", async ({ page }) => {
+  const charge = { chargeId: "charge-1", amountCents: 5000, status: "PENDING", returnUrl: "/carteira?depositId=deposit-1", expiresAt: new Date(Date.now() + 900_000).toISOString() };
+  await page.route("**/api/v1/checkout", async (route) => {
+    expect(route.request().headers().authorization).toBe("Checkout checkout-token");
+    return route.fulfill({ json: charge });
+  });
+  await page.route("**/api/v1/checkout/simulate", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ outcome: "PAID" });
+    return route.fulfill({ json: { ...charge, status: "PAID" } });
+  });
+  await page.goto("/pagamento#checkout-token");
+  await expect(page.getByRole("heading", { name: "Finalize seu depósito" })).toBeVisible();
+  await expect(page.locator("[data-payment-code]")).toHaveText("https://youtu.be/dQw4w9WgXcQ");
+  await expect(page.locator(".payment-qr svg")).toBeVisible();
+  await page.getByRole("button", { name: "SIMULAR PAGAMENTO" }).click();
+  await expect(page.locator("[data-payment-result]")).toContainText("Pagamento confirmado");
+  await expect(page.getByRole("link", { name: "VOLTAR À CARTEIRA" })).toHaveAttribute("href", /\/carteira\?depositId=deposit-1$/);
+});
+
+for (const scenario of [
+  { outcome: "REFUSED", button: "SIMULAR RECUSA", expected: "Pagamento recusado" },
+  { outcome: "EXPIRED", button: "SIMULAR EXPIRAÇÃO", expected: "Cobrança expirada" },
+]) {
+  test(`checkout apresenta ${scenario.outcome.toLowerCase()} em português`, async ({ page }) => {
+    const charge = { chargeId: "charge-terminal", amountCents: 2000, status: "PENDING", returnUrl: "/carteira?depositId=deposit-terminal", expiresAt: new Date(Date.now() + 900_000).toISOString() };
+    await page.route("**/api/v1/checkout", (route) => route.fulfill({ json: charge }));
+    await page.route("**/api/v1/checkout/simulate", async (route) => {
+      expect(route.request().postDataJSON()).toEqual({ outcome: scenario.outcome });
+      return route.fulfill({ json: { ...charge, status: scenario.outcome } });
+    });
+    await page.goto("/pagamento#checkout-token");
+    await page.getByRole("button", { name: scenario.button }).click();
+    await expect(page.locator("[data-payment-result]")).toContainText(scenario.expected);
+  });
+}
+
+test("checkout mostra falha de simulação e não possui overflow em 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  const charge = { chargeId: "charge-error", amountCents: 2000, status: "PENDING", returnUrl: "/carteira?depositId=deposit-error", expiresAt: new Date(Date.now() + 900_000).toISOString() };
+  await page.route("**/api/v1/checkout", (route) => route.fulfill({ json: charge }));
+  await page.route("**/api/v1/checkout/simulate", (route) => route.fulfill({ status: 503 }));
+  await page.goto("/pagamento#checkout-token");
+  await page.getByRole("button", { name: "SIMULAR PAGAMENTO" }).click();
+  await expect(page.locator("[data-payment-message]")).toHaveText("Não foi possível registrar a simulação. Tente novamente.");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("carteira apresenta depósitos recentes e permite retomar preparação", async ({ page }) => {
+  await mockUserApis(page);
+  let reconciled = "";
+  const now = new Date().toISOString();
+  await page.route(/\/api\/wallet\/me\/deposits(?:\?.*)?$/, (route) => route.fulfill({ json: { items: [
+    { depositId: "deposit-creating", amountCents: 2000, status: "CREATING", createdAt: now, updatedAt: now },
+    { depositId: "deposit-pending", amountCents: 5000, status: "PENDING", checkoutUrl: "/pagamento#pending", createdAt: now, updatedAt: now },
+    { depositId: "deposit-confirmed", amountCents: 10000, status: "CONFIRMED", createdAt: now, updatedAt: now, confirmedAt: now },
+  ], page: 0, size: 10, total: 3 } }));
+  await page.route("**/api/wallet/me/deposits/*/reconcile", async (route) => {
+    reconciled = new URL(route.request().url()).pathname;
+    return route.fulfill({ json: { depositId: "deposit-creating", amountCents: 2000, status: "PENDING", checkoutUrl: "/pagamento#prepared", createdAt: now, updatedAt: now } });
+  });
+
+  await page.goto("/carteira");
+  await expect(page.locator("[data-deposit-list]")).toContainText("PREPARANDO");
+  await expect(page.locator("[data-deposit-list]")).toContainText("AGUARDANDO PAGAMENTO");
+  await expect(page.locator("[data-deposit-list]")).toContainText("CONFIRMADO");
+  await page.getByRole("button", { name: "TENTAR PREPARAR" }).click();
+  expect(reconciled).toContain("/deposit-creating/reconcile");
 });
