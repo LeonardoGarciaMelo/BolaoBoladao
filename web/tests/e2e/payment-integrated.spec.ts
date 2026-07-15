@@ -1,6 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-async function registerAndLogin(page: import("@playwright/test").Page, prefix: string) {
+type CheckoutOutcome = "PAID" | "REFUSED" | "EXPIRED";
+
+async function registerAndLogin(page: Page, prefix: string) {
   const username = `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
   const password = "Boladao-Pay-2026!";
   await page.goto("/registro");
@@ -15,7 +17,7 @@ async function registerAndLogin(page: import("@playwright/test").Page, prefix: s
   await expect(page).toHaveURL(/\/partidas$/);
 }
 
-async function walletApi(page: import("@playwright/test").Page, path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) {
+async function walletApi(page: Page, path: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) {
   return page.evaluate(async ({ path, init }) => {
     const token = sessionStorage.getItem("bolao.access-token");
     const response = await fetch(`/api${path}`, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } });
@@ -23,7 +25,7 @@ async function walletApi(page: import("@playwright/test").Page, path: string, in
   }, { path, init });
 }
 
-async function createDeposit(page: import("@playwright/test").Page, amountCents: number) {
+async function createDeposit(page: Page, amountCents: number) {
   const response = await walletApi(page, "/wallet/me/deposits", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
@@ -31,6 +33,17 @@ async function createDeposit(page: import("@playwright/test").Page, amountCents:
   });
   expect(response.status).toBe(201);
   return response.body as { depositId: string; checkoutUrl: string; status: string };
+}
+
+async function simulateCheckout(page: Page, token: string, outcome: CheckoutOutcome) {
+  const provider = new URL(page.url()).hostname === "api-gateway"
+    ? "http://payment-simulator:4000/api/v1"
+    : "http://localhost:4000/api/v1";
+  const response = await page.request.post(`${provider}/checkout/simulate`, {
+    headers: { Authorization: `Checkout ${token}`, "Content-Type": "application/json" },
+    data: { outcome },
+  });
+  return { status: response.status(), body: await response.json() };
 }
 
 test("fluxo integrado cria, paga e credita um depósito PIX fictício", async ({ page }) => {
@@ -56,21 +69,34 @@ test("fluxo integrado cria, paga e credita um depósito PIX fictício", async ({
   await expect(page.locator("[data-wallet-history]")).toContainText("+ R$ 20,00");
 });
 
+test("webhook de expiração atualiza a Carteira sem reconciliação manual", async ({ page }) => {
+  test.setTimeout(60_000);
+  await registerAndLogin(page, "expiry");
+  const deposit = await createDeposit(page, 3700);
+  const checkoutToken = new URL(deposit.checkoutUrl).hash.slice(1);
+
+  const simulation = await simulateCheckout(page, checkoutToken, "EXPIRED");
+
+  expect(simulation).toMatchObject({ status: 200, body: { status: "EXPIRED" } });
+
+  await page.goto("/carteira");
+  const depositCard = page.locator("[data-deposit-list] .wallet-deposit").first();
+  await expect(depositCard).toHaveAttribute("data-status", "expired", { timeout: 15_000 });
+  await expect(depositCard).toContainText("EXPIRADO");
+  await page.reload();
+  await expect(page.locator("[data-deposit-list] .wallet-deposit").first()).toHaveAttribute("data-status", "expired");
+});
+
 test("resultados terminais concorrentes possuem um único vencedor no Postgres", async ({ page }) => {
   test.setTimeout(60_000);
   await registerAndLogin(page, "race");
   const deposit = await createDeposit(page, 3000);
   const checkoutToken = new URL(deposit.checkoutUrl).hash.slice(1);
 
-  const results = await page.evaluate(async (token) => {
-    const base = location.hostname === "api-gateway" ? "http://payment-simulator:4000/api/v1" : "http://localhost:4000/api/v1";
-    const simulate = (outcome: string) => fetch(`${base}/checkout/simulate`, {
-      method: "POST",
-      headers: { Authorization: `Checkout ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ outcome }),
-    }).then(async (response) => ({ status: response.status, body: await response.json() }));
-    return Promise.all([simulate("PAID"), simulate("REFUSED")]);
-  }, checkoutToken);
+  const results = await Promise.all([
+    simulateCheckout(page, checkoutToken, "PAID"),
+    simulateCheckout(page, checkoutToken, "REFUSED"),
+  ]);
 
   expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
   const winner = results.find((result) => result.status === 200)?.body.status;
@@ -84,21 +110,16 @@ test("webhook e reconciliação concorrentes criam um único crédito real", asy
   const deposit = await createDeposit(page, 2000);
   const checkoutToken = new URL(deposit.checkoutUrl).hash.slice(1);
 
-  await page.evaluate(async ({ token, depositId }) => {
-    const accessToken = sessionStorage.getItem("bolao.access-token");
-    const provider = location.hostname === "api-gateway" ? "http://payment-simulator:4000/api/v1" : "http://localhost:4000/api/v1";
-    await Promise.all([
-      fetch(`${provider}/checkout/simulate`, {
-        method: "POST",
-        headers: { Authorization: `Checkout ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ outcome: "PAID" }),
-      }),
-      fetch(`/api/wallet/me/deposits/${depositId}/reconcile`, {
+  await Promise.all([
+    simulateCheckout(page, checkoutToken, "PAID"),
+    page.evaluate(async (depositId) => {
+      const accessToken = sessionStorage.getItem("bolao.access-token");
+      await fetch(`/api/wallet/me/deposits/${depositId}/reconcile`, {
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
-      }),
-    ]);
-  }, { token: checkoutToken, depositId: deposit.depositId });
+      });
+    }, deposit.depositId),
+  ]);
 
   await expect.poll(async () => (await walletApi(page, `/wallet/me/deposits/${deposit.depositId}`)).body.status,
     { timeout: 20_000 }).toBe("CONFIRMED");

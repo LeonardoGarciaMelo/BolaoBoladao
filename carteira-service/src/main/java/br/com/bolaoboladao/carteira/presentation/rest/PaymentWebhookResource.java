@@ -4,6 +4,7 @@ import br.com.bolaoboladao.carteira.application.ApiException;
 import br.com.bolaoboladao.carteira.application.ProcessDepositUseCase;
 import br.com.bolaoboladao.carteira.infrastructure.payment.ProviderCharge;
 import br.com.bolaoboladao.carteira.infrastructure.payment.WebhookSignature;
+import br.com.bolaoboladao.carteira.presentation.rest.filter.WebhookAuthenticated;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.mutiny.Uni;
@@ -19,6 +20,7 @@ import java.util.UUID;
 
 @Path("/wallet/webhooks/boladao-pay")
 @Produces(MediaType.APPLICATION_JSON)
+@WebhookAuthenticated
 public class PaymentWebhookResource {
     @Inject WebhookSignature signature;
     @Inject ObjectMapper objectMapper;
