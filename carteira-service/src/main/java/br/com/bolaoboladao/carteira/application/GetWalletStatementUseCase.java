@@ -20,14 +20,27 @@ public class GetWalletStatementUseCase {
     private final LedgerRepository ledgerRepository;
     private final WalletCache walletCache;
     private final WalletRepository walletRepository;
+    private final CreateWalletUseCase createWalletUseCase;
+
+    public record StatementPage(List<Ledger> items, int page, int size, long total) {}
 
     @Inject
     public GetWalletStatementUseCase(LedgerRepository ledgerRepository,
                                      WalletCache walletCache,
-                                     WalletRepository walletRepository) {
+                                     WalletRepository walletRepository,
+                                     CreateWalletUseCase createWalletUseCase) {
         this.ledgerRepository = ledgerRepository;
         this.walletCache = walletCache;
         this.walletRepository = walletRepository;
+        this.createWalletUseCase = createWalletUseCase;
+    }
+
+    @WithTransaction
+    public Uni<StatementPage> executeForUser(UUID authenticatedUserId, int page, int size) {
+        return createWalletUseCase.execute(authenticatedUserId)
+                .flatMap(wallet -> fetchAndCacheStatement(wallet.id(), page, size)
+                        .flatMap(items -> ledgerRepository.countByWalletId(wallet.id())
+                                .map(total -> new StatementPage(items, page, size, total))));
     }
 
     @WithTransaction

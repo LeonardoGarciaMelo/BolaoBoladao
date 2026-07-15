@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -11,6 +11,7 @@ class Base(DeclarativeBase):
 
 class Bet(Base):
     __tablename__ = "bets"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key", name="uq_bet_user_idempotency"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -20,6 +21,20 @@ class Bet(Base):
     stake_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="CREATED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class MatchSnapshot(Base):
+    __tablename__ = "match_snapshots"
+
+    match_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    team_home: Mapped[str] = mapped_column(String(120), nullable=False)
+    team_away: Mapped[str] = mapped_column(String(120), nullable=False)
+    scheduled_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    home_team_goals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    away_team_goals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

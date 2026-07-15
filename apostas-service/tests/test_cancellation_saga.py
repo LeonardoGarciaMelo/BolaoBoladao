@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app import main
-from app.models import Base, Bet, MatchCancellation, OutboxEvent, ProcessedEvent
+from app.models import Base, Bet, MatchCancellation, MatchSnapshot, OutboxEvent, ProcessedEvent
 
 
 class CancellationSagaTest(unittest.TestCase):
@@ -23,7 +23,8 @@ class CancellationSagaTest(unittest.TestCase):
     def create_bet(self, status: str) -> Bet:
         bet = Bet(id=str(uuid4()), user_id=str(uuid4()), match_id=str(uuid4()),
                   home_team_goals=2, away_team_goals=1, stake_amount=Decimal("10.00"),
-                  status=status, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc))
+                  status=status, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc),
+                  idempotency_key=str(uuid4()))
         with self.sessions() as db:
             db.add(bet)
             db.commit()
@@ -41,6 +42,43 @@ class CancellationSagaTest(unittest.TestCase):
             self.assertEqual("REFUND_PENDING", db.get(Bet, bet.id).status)
             self.assertEqual(1, db.scalar(select(func.count(OutboxEvent.id))))
             self.assertEqual(1, db.scalar(select(func.count(ProcessedEvent.id))))
+
+    def test_match_events_build_enriched_projection(self) -> None:
+        match_id = str(uuid4())
+        created = {
+            "event_id": str(uuid4()),
+            "event_type": "MATCH_CREATED",
+            "match_id": match_id,
+            "team_home": "Aurora",
+            "team_away": "Estrela",
+            "scheduled_start": "2026-07-20T20:00:00Z",
+            "score": {"team_home": 0, "team_away": 0},
+        }
+        main.handle_event(main.settings.kafka_match_topic, created)
+        main.handle_event(main.settings.kafka_match_topic, {
+            **created,
+            "event_id": str(uuid4()),
+            "event_type": "MATCH_STARTED",
+        })
+        main.handle_event(main.settings.kafka_match_topic, {
+            **created,
+            "event_id": str(uuid4()),
+            "event_type": "TEAM_HOME_SCORED",
+            "score": {"team_home": 1, "team_away": 0},
+        })
+        main.handle_event(main.settings.kafka_match_topic, {
+            **created,
+            "event_id": str(uuid4()),
+            "event_type": "MATCH_ENDED",
+            "score": {"team_home": 1, "team_away": 0},
+        })
+
+        with self.sessions() as db:
+            snapshot = db.get(MatchSnapshot, match_id)
+            self.assertEqual("Aurora", snapshot.team_home)
+            self.assertEqual("Estrela", snapshot.team_away)
+            self.assertEqual("FINISHED", snapshot.status)
+            self.assertEqual(1, snapshot.home_team_goals)
 
     def test_payment_confirmed_after_cancellation_is_refunded_once(self) -> None:
         bet = self.create_bet("CREATED")
@@ -70,6 +108,19 @@ class CancellationSagaTest(unittest.TestCase):
 
         with self.sessions() as db:
             self.assertEqual("CANCELED", db.get(Bet, bet.id).status)
+            self.assertEqual(0, db.scalar(select(func.count(OutboxEvent.id))))
+
+    def test_payment_already_refused_is_resolved_without_refund(self) -> None:
+        bet = self.create_bet("PAYMENT_REFUSED")
+        main.handle_event(main.settings.kafka_match_topic,
+                          {"event_id": str(uuid4()), "event_type": "MATCH_CANCELED",
+                           "match_id": bet.match_id, "reason": "Cancelamento administrativo"})
+
+        with self.sessions() as db:
+            progress = main.build_refund_progress(UUID(bet.match_id), db)
+            self.assertEqual("PAYMENT_REFUSED", db.get(Bet, bet.id).status)
+            self.assertEqual("COMPLETED", progress.status)
+            self.assertEqual(1, progress.completed)
             self.assertEqual(0, db.scalar(select(func.count(OutboxEvent.id))))
 
     def test_refund_failure_remains_visible_for_reprocessing(self) -> None:

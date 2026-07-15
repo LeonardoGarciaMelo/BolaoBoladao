@@ -129,6 +129,58 @@ class MatchResourceTest {
     }
 
     @Test
+    void catalogoListaPartidasAbertasComPaginacaoEJanelaDePalpite() {
+        String id = createMatch("Catálogo A", "Catálogo B");
+
+        given()
+                .when().get("/partidas/catalog?view=OPEN&page=0&size=50")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(0))
+                .body("size", equalTo(50))
+                .body("items.find { it.id == '%s' }.bettingOpen".formatted(id), equalTo(true))
+                .body("items.find { it.id == '%s' }.status".formatted(id), equalTo("SCHEDULED"));
+    }
+
+    @Test
+    void catalogoFiltraEstadosOrdenaEPagina() {
+        String live = createMatch("Catálogo Ao Vivo A", "Catálogo Ao Vivo B");
+        given().header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/iniciar", live).then().statusCode(200);
+
+        String finished = createMatch("Catálogo Encerrada A", "Catálogo Encerrada B");
+        given().header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/iniciar", finished).then().statusCode(200);
+        given().header("Authorization", "Bearer " + adminToken())
+                .when().post("/admin/partidas/{id}/encerrar", finished).then().statusCode(200);
+
+        String canceled = createMatch("Catálogo Cancelada A", "Catálogo Cancelada B");
+        given().header("Authorization", "Bearer " + adminToken())
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(ContentType.JSON)
+                .body("{\"reason\":\"Cancelamento para testar o catálogo\"}")
+                .when().post("/admin/partidas/{id}/cancel", canceled).then().statusCode(202);
+
+        given().when().get("/partidas/catalog?view=LIVE&page=0&size=50").then().statusCode(200)
+                .body("items.find { it.id == '%s' }.status".formatted(live), equalTo("IN_PROGRESS"));
+        given().when().get("/partidas/catalog?view=FINISHED&page=0&size=50").then().statusCode(200)
+                .body("items.find { it.id == '%s' }.status".formatted(finished), equalTo("FINISHED"));
+        given().when().get("/partidas/catalog?view=CANCELED&page=0&size=50").then().statusCode(200)
+                .body("items.find { it.id == '%s' }.status".formatted(canceled), equalTo("CANCELED"));
+
+        var openResponse = given().when().get("/partidas/catalog?view=OPEN&page=0&size=1")
+                .then().statusCode(200).body("page", equalTo(0)).body("size", equalTo(1))
+                .body("items.size()", equalTo(1)).extract();
+        org.junit.jupiter.api.Assertions.assertTrue(openResponse.path("total") instanceof Number);
+
+        java.util.List<String> starts = given().when().get("/partidas/catalog?view=OPEN&page=0&size=50")
+                .then().statusCode(200).extract().jsonPath().getList("items.start", String.class);
+        var parsedStarts = starts.stream().map(OffsetDateTime::parse).toList();
+        org.junit.jupiter.api.Assertions.assertEquals(parsedStarts.stream().sorted().toList(), parsedStarts);
+
+        given().when().get("/partidas/catalog?view=UNKNOWN").then().statusCode(400);
+    }
+
+    @Test
     void deveTestarCacheEOutbox() throws InterruptedException {
         String start = OffsetDateTime.now().plusHours(1).toString();
         String body = """

@@ -13,6 +13,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -39,20 +40,20 @@ public class ApostasGatewayResource {
     }
 
     @GET
-    @Path("/{path: .*}")
+    @Path("/{path: .+}")
     public Uni<Response> get(@PathParam("path") String path, @Context UriInfo uriInfo) {
         return forwardGet(path, uriInfo);
     }
 
     @POST
-    public Uni<Response> create(String body, @Context UriInfo uriInfo) {
-        return forwardPost("", uriInfo, body);
+    public Uni<Response> create(String body, @Context UriInfo uriInfo, @Context HttpHeaders headers) {
+        return forwardPost("", uriInfo, body, headers.getHeaderString("Idempotency-Key"));
     }
 
     @POST
-    @Path("/{path: .*}")
+    @Path("/{path: .+}")
     public Uni<Response> post(@PathParam("path") String path, String body, @Context UriInfo uriInfo) {
-        return forwardPost(path, uriInfo, body);
+        return forwardPost(path, uriInfo, body, null);
     }
 
     private Uni<Response> forwardGet(String path, UriInfo uriInfo) {
@@ -60,8 +61,8 @@ public class ApostasGatewayResource {
                 .onItem().transform(GatewayResponses::from);
     }
 
-    private Uni<Response> forwardPost(String path, UriInfo uriInfo, String body) {
-        return backendClient.post(target(path, uriInfo), authenticatedUserId(), body)
+    private Uni<Response> forwardPost(String path, UriInfo uriInfo, String body, String idempotencyKey) {
+        return backendClient.post(target(path, uriInfo), authenticatedUserId(), idempotencyKey, body)
                 .onItem().transform(GatewayResponses::from);
     }
 

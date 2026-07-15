@@ -30,9 +30,9 @@ API Gateway
 
 Diagrama completo e catálogo de eventos: [`docs/arquitetura.md`](docs/arquitetura.md).
 
-**Status atual:** Partidas, Usuários, Carteira/Pagamentos, API Gateway e a
-integração via Kafka estão implementados. Apostas possui versão inicial em
-Python para criação de apostas e emissão de evento `BET_CREATED`.
+**Status atual:** Partidas, Usuários, Carteira/Pagamentos, Apostas, API Gateway,
+o painel administrativo, o painel do usuário e a integração via Kafka estão
+implementados. A apuração e o pagamento de prêmios continuam fora do escopo.
 
 ## Serviços
 
@@ -43,7 +43,7 @@ Python para criação de apostas e emissão de evento `BET_CREATED`.
 | `api-gateway` | ✅ implementado | Quarkus 3 (Java 21) + JWT RS256 | pública (8080) |
 | `web` | ✅ implementado | Astro + Nginx | interna (80) |
 | `carteira-service` | ✅ implementado | Quarkus 3 (Java 21) + PostgreSQL + Redis + Kafka | interna (8080) |
-| `apostas-service` | ✅ versão inicial | FastAPI (Python 3.12) + PostgreSQL + Kafka | interna (8000) |
+| `apostas-service` | ✅ implementado | FastAPI (Python 3.12) + PostgreSQL + Kafka | interna (8000) |
 
 ## Perfis de execução
 
@@ -77,6 +77,15 @@ A web e a API estarão em `http://localhost:8080`: o gateway entrega a
 interface e encaminha as chamadas sob `/api`. Nenhum backend HTTP além do
 gateway publica porta no host quando executado pelo Compose.
 
+Este incremento altera as tabelas locais de Apostas e as projeções derivadas
+de eventos. Não há backfill dos dados anteriores. Em ambientes de
+desenvolvimento, recrie os volumes antes da primeira subida desta versão:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 O fluxo é cadastro (`POST /api/auth/register`) → login
 (`POST /api/auth/login`) → Bearer JWT nas chamadas protegidas, como
 `GET /api/partidas`. O gateway valida assinatura RS256, issuer, audience e
@@ -89,9 +98,32 @@ e das variáveis `ADMIN_BOOTSTRAP_NAME` e `ADMIN_BOOTSTRAP_USERNAME`. A criaçã
 impede o startup. Após o login, `GET /api/auth/me` retorna identidade e roles;
 `ADMIN` segue para `/admin` e `USER` para `/partidas`.
 
-A carteira também é acessada exclusivamente com Bearer JWT pelo gateway:
-`GET /api/wallet/{userId}/balance` e
-`GET /api/wallet/{walletId}/statement?page=0&size=10`.
+A carteira também é acessada exclusivamente com Bearer JWT pelo gateway. O
+painel usa `GET /api/wallet/me` e
+`GET /api/wallet/me/statement?page=0&size=10`, sem aceitar identidade ou
+`walletId` do cliente. As rotas administrativas e legadas permanecem
+compatíveis.
+
+## Painel do usuário
+
+Após o login, usuários comuns seguem para `/partidas`. O shell autenticado é
+compartilhado por `/partidas`, `/palpites`, `/carteira` e `/perfil`; exibe saldo,
+atalho de adição de saldo (somente diálogo “Em breve”) e menu da conta.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/partidas/catalog?view=OPEN&page=0&size=12` | Catálogo ordenado; views `OPEN`, `LIVE`, `FINISHED` e `CANCELED` |
+| `POST` | `/api/bets` | Cria palpite; exige `Idempotency-Key` e valor mínimo de R$ 1,00 |
+| `GET` | `/api/bets?status=&page=0&size=10` | Lista paginada dos palpites do usuário autenticado |
+| `GET` | `/api/bets/{id}` | Consulta um palpite do usuário autenticado |
+| `GET` | `/api/wallet/me` | Obtém ou cria a carteira e retorna saldo em centavos |
+| `GET` | `/api/wallet/me/statement?page=0&size=10` | Extrato paginado do usuário autenticado |
+
+Vários palpites para a mesma partida, inclusive idênticos, são permitidos. A
+janela fecha no início previsto ou quando a partida deixa `SCHEDULED`, o que
+ocorrer primeiro. O débito continua assíncrono e serializado pela Carteira;
+por isso uma segunda submissão concorrente pode ser recusada após o saldo ter
+sido consumido pela primeira.
 
 ## Como rodar — `partidas-service` isoladamente
 

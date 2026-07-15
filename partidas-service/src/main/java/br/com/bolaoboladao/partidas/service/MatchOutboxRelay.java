@@ -36,6 +36,9 @@ public class MatchOutboxRelay {
             Long event_id, // Identificador único do evento para deduplicação no consumidor
             UUID match_id,
             String event_type,
+            String team_home,
+            String team_away,
+            OffsetDateTime scheduled_start,
             ScoreDto score,
             OffsetDateTime occurred_at,
             UUID actor_id,
@@ -58,16 +61,7 @@ public class MatchOutboxRelay {
         for (MatchEvent event : pendingEvents) {
             try {
                 // 2. Mapeamento para o DTO do evento de domínio
-                ScoreDto score = new ScoreDto(event.teamHomeScoreAtEvent, event.teamAwayScoreAtEvent);
-                MatchDomainEvent payload = new MatchDomainEvent(
-                        event.id,
-                        event.match.id,
-                        event.eventType.name(),
-                        score,
-                        event.occurredAt,
-                        event.actorId,
-                        event.reason
-                );
+                MatchDomainEvent payload = toDomainEvent(event);
 
                 // 3. Monta o metadado Kafka para usar a partida como chave (garante ordenação no mesmo tópico/partição)
                 OutgoingKafkaRecordMetadata<String> metadata = OutgoingKafkaRecordMetadata.<String>builder()
@@ -106,5 +100,20 @@ public class MatchOutboxRelay {
                 break;
             }
         }
+    }
+
+    static MatchDomainEvent toDomainEvent(MatchEvent event) {
+        return new MatchDomainEvent(
+                event.id,
+                event.match.id,
+                event.eventType.name(),
+                event.match.teamHome.name,
+                event.match.teamAway.name,
+                event.match.start,
+                new ScoreDto(event.teamHomeScoreAtEvent, event.teamAwayScoreAtEvent),
+                event.occurredAt,
+                event.actorId,
+                event.reason
+        );
     }
 }

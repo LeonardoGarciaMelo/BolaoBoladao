@@ -1,0 +1,128 @@
+import { expect, test } from "@playwright/test";
+
+const match = {
+  id: "11111111-1111-1111-1111-111111111111",
+  teamHome: "Aurora",
+  teamAway: "Estrela",
+  teamHomeScore: 0,
+  teamAwayScore: 0,
+  start: new Date(Date.now() + 3_600_000).toISOString(),
+  end: null,
+  status: "SCHEDULED",
+  bettingOpen: true,
+};
+
+async function mockUserApis(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => sessionStorage.setItem("bolao.access-token", "user-token"));
+  let balanceCents = 5000;
+  let submission = 0;
+  const forwardedKeys: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/me") return route.fulfill({ json: { id: "user-1", name: "Ana Silva", username: "ana", roles: ["USER"] } });
+    if (url.pathname === "/api/wallet/me") return route.fulfill({ json: { userId: "user-1", walletId: "wallet-1", balanceCents } });
+    if (url.pathname === "/api/wallet/me/statement") return route.fulfill({ json: { items: [{ id: "entry-1", reason: "ADMIN_CREDIT", operation: "CREDIT", amountCents: 5000, occurredAt: new Date().toISOString(), note: "Boas-vindas" }, { id: "entry-2", reason: "BET", operation: "DEBIT", amountCents: 1000, occurredAt: new Date().toISOString() }], page: 0, size: 10, total: 2 } });
+    if (url.pathname === "/api/partidas/catalog") return route.fulfill({ json: { items: [match], page: 0, size: 12, total: 1 } });
+    if (url.pathname === "/api/bets" && route.request().method() === "POST") {
+      submission += 1;
+      forwardedKeys.push(route.request().headers()["idempotency-key"]);
+      return route.fulfill({ status: 201, json: bet("PROCESSING", submission === 1 ? "22222222-2222-2222-2222-222222222222" : "33333333-3333-3333-3333-333333333333") });
+    }
+    if (url.pathname.endsWith("/api/bets/22222222-2222-2222-2222-222222222222")) {
+      balanceCents = 4000;
+      return route.fulfill({ json: bet("AWAITING_SETTLEMENT", "22222222-2222-2222-2222-222222222222") });
+    }
+    if (url.pathname.endsWith("/api/bets/33333333-3333-3333-3333-333333333333")) return route.fulfill({ json: bet("PAYMENT_REFUSED", "33333333-3333-3333-3333-333333333333") });
+    if (url.pathname === "/api/bets") return route.fulfill({ json: { items: [], page: 0, size: 10, total: 0 } });
+    return route.fulfill({ status: 404, json: { message: "mock ausente" } });
+  });
+  return () => forwardedKeys;
+}
+
+function bet(status: string, id: string) {
+  return {
+    bet_id: id,
+    user_id: "user-1",
+    match_id: match.id,
+    home_team_goals: 2,
+    away_team_goals: 1,
+    stake_amount: "10.00",
+    status,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    match: {
+      match_id: match.id,
+      team_home: match.teamHome,
+      team_away: match.teamAway,
+      scheduled_start: match.start,
+      status: match.status,
+      home_team_goals: 0,
+      away_team_goals: 0,
+    },
+  };
+}
+
+test("usuário revisa e confirma um palpite idempotente", async ({ page }) => {
+  const forwardedKeys = await mockUserApis(page);
+  await page.goto("/partidas");
+
+  await expect(page.locator("[data-user-shell]")).toBeVisible();
+  await expect(page.locator("[data-user-balance]")).toHaveText("R$ 50,00");
+  await expect(page.getByRole("button", { name: "ABERTAS" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-match-list]")).toContainText("Aurora");
+
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  await page.locator('[name="homeGoals"]').fill("2");
+  await page.locator('[name="awayGoals"]').fill("1");
+  await page.locator('[name="stake"]').fill("10,00");
+  await page.getByRole("button", { name: "REVISAR PALPITE" }).click();
+  await expect(page.locator("[data-bet-review]")).toContainText("R$ 10,00");
+  await page.getByRole("button", { name: "CONFIRMAR PALPITE" }).click();
+
+  await expect(page.locator("[data-bet-result]")).toContainText("Processando pagamento");
+  await expect(page.locator("[data-bet-result]")).toContainText("Palpite confirmado");
+  await expect(page.locator("[data-user-balance]")).toHaveText("R$ 40,00");
+
+  await page.getByRole("button", { name: "FECHAR", exact: true }).click();
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  await page.locator('[name="homeGoals"]').fill("2");
+  await page.locator('[name="awayGoals"]').fill("1");
+  await page.locator('[name="stake"]').fill("10,00");
+  await page.getByRole("button", { name: "REVISAR PALPITE" }).click();
+  await page.getByRole("button", { name: "CONFIRMAR PALPITE" }).click();
+  await expect(page.locator("[data-bet-result]")).toContainText("Pagamento recusado");
+  await expect(page.locator("[data-user-balance]")).toHaveText("R$ 40,00");
+  expect(forwardedKeys()).toHaveLength(2);
+  expect(forwardedKeys()[0]).toBeTruthy();
+  expect(forwardedKeys()[1]).not.toBe(forwardedKeys()[0]);
+});
+
+test("header e menu do avatar permanecem utilizáveis no mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await mockUserApis(page);
+  await page.goto("/perfil");
+  await page.locator("[data-avatar-trigger]").click();
+  await expect(page.getByRole("menuitem", { name: "Carteira" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Perfil" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("navega pelas quatro páginas, abre saldo e apresenta o extrato", async ({ page }) => {
+  await mockUserApis(page);
+  await page.goto("/partidas");
+  await page.getByRole("link", { name: "Palpites" }).click();
+  await expect(page.getByRole("heading", { name: "Meus palpites" })).toBeVisible();
+
+  await page.locator("[data-avatar-trigger]").click();
+  await page.getByRole("menuitem", { name: "Carteira" }).click();
+  await expect(page.getByRole("heading", { name: "Histórico de transações" })).toBeVisible();
+  await expect(page.locator("[data-wallet-history]")).toContainText("Crédito administrativo");
+  await expect(page.locator("[data-wallet-history]")).toContainText("− R$ 10,00");
+  await page.getByRole("button", { name: "ADICIONAR SALDO" }).first().click();
+  await expect(page.getByRole("dialog")).toContainText("O serviço de pagamento está chegando");
+  await page.getByRole("button", { name: "ENTENDI" }).click();
+
+  await page.locator("[data-avatar-trigger]").click();
+  await page.getByRole("menuitem", { name: "Perfil" }).click();
+  await expect(page.getByRole("heading", { name: "Ana Silva" })).toBeVisible();
+});

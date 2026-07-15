@@ -53,7 +53,7 @@ public class KafkaEventConsumer {
 
     private Uni<Void> handleUserEvent(UserEvent event) {
         if ("USER_CREATED".equals(event.eventType())) {
-            return createWalletUseCase.execute(event.userId());
+            return createWalletUseCase.execute(event.userId()).replaceWithVoid();
         }
         LOG.warnf("Unknown user event type: %s", event.eventType());
         return Uni.createFrom().voidItem();

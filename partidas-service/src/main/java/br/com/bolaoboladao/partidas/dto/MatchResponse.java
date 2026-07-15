@@ -14,6 +14,7 @@ public record MatchResponse(
         OffsetDateTime start,
         OffsetDateTime end,
         MatchStatus status,
+        boolean bettingOpen,
         OffsetDateTime canceledAt,
         UUID canceledBy,
         String cancelReason
