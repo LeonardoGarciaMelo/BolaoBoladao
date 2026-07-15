@@ -76,9 +76,9 @@ O filtro aceita um ou mais estados separados por vírgula.
 Consulta um único palpite e retorna `404` quando ele não pertence ao usuário.
 
 Os estados apresentados são `PROCESSING`, `CONFIRMED`,
-`AWAITING_SETTLEMENT`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
-e `REFUND_FAILED`. `AWAITING_SETTLEMENT` é derivado quando a partida encerra;
-não há apuração ou prêmio neste incremento.
+`WON`, `LOST`, `PAYMENT_REFUSED`, `CANCELING`, `REFUNDING`, `CANCELED`
+e `REFUND_FAILED`. `WON` e `LOST` são gerados na apuração quando a partida encerra,
+juntamente com o envio do prêmio correspondente para a carteira do usuário no caso de vitória.
 
 Published Kafka event:
 

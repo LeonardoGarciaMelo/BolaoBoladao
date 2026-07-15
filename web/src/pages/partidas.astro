@@ -68,7 +68,7 @@ import UserShell from "../components/templates/UserShell.astro";
 
   type Match = { id: string; teamHome: string; teamAway: string; teamHomeScore: number; teamAwayScore: number; start: string; durationMinutes: number; expectedEnd: string; startedAt?: string; end?: string; status: string; bettingOpen: boolean };
   type Page = { items: Match[]; page: number; size: number; total: number };
-  type BetStatus = "PROCESSING" | "CONFIRMED" | "AWAITING_SETTLEMENT" | "PAYMENT_REFUSED" | "CANCELING" | "REFUNDING" | "CANCELED" | "REFUND_FAILED";
+  type BetStatus = "PROCESSING" | "CONFIRMED" | "AWAITING_SETTLEMENT" | "WON" | "LOST" | "PAYMENT_REFUSED" | "CANCELING" | "REFUNDING" | "CANCELED" | "REFUND_FAILED";
   type Bet = { bet_id: string; status: BetStatus };
   let currentView = "OPEN"; let currentPage = 0; let total = 0; let selected: Match | undefined;
   let loadingMatches = false;
@@ -212,7 +212,7 @@ import UserShell from "../components/templates/UserShell.astro";
       const created = await response.json() as Bet;
       showStep("result"); const terminal = created.status === "PROCESSING" ? await pollBet(created.bet_id) : created;
       const heading = result?.querySelector("h3"); const copy = result?.querySelector("p"); const pulse = result?.querySelector<HTMLElement>(".bet-result__pulse");
-      if (terminal?.status === "CONFIRMED" || terminal?.status === "AWAITING_SETTLEMENT") { if (heading) heading.textContent = "Palpite confirmado"; if (copy) copy.textContent = "O valor foi reservado na sua carteira."; if (pulse) pulse.hidden = true; await refreshWallet(); }
+      if (terminal?.status === "CONFIRMED" || terminal?.status === "AWAITING_SETTLEMENT" || terminal?.status === "WON" || terminal?.status === "LOST") { if (heading) heading.textContent = "Palpite confirmado"; if (copy) copy.textContent = "O valor foi reservado na sua carteira."; if (pulse) pulse.hidden = true; await refreshWallet(); }
       else if (terminal?.status === "PAYMENT_REFUSED") { if (heading) heading.textContent = "Pagamento recusado"; if (copy) copy.textContent = "Seu saldo não foi alterado."; if (pulse) pulse.hidden = true; await refreshWallet(); }
       else if (terminal?.status === "CANCELED") { if (heading) heading.textContent = "Palpite cancelado"; if (copy) copy.textContent = "A movimentação financeira foi encerrada."; if (pulse) pulse.hidden = true; await refreshWallet(); }
       else if (terminal?.status === "REFUND_FAILED") { if (heading) heading.textContent = "Falha no estorno"; if (copy) copy.textContent = "A equipe poderá reprocessar a devolução do valor."; if (pulse) pulse.hidden = true; await refreshWallet(); }

@@ -176,6 +176,8 @@ def display_status(bet: Bet, snapshot: MatchSnapshot) -> str:
     if bet.status == "CONFIRMED" and snapshot.status == "FINISHED":
         return "AWAITING_SETTLEMENT"
     return {
+        "WON": "WON",
+        "LOST": "LOST",
         "CONFIRMED": "CONFIRMED",
         "PAYMENT_REFUSED": "PAYMENT_REFUSED",
         "CANCEL_PENDING": "CANCELING",
@@ -208,6 +210,8 @@ def presentation_status_condition(value: str | None):
         "PROCESSING": Bet.status == "CREATED",
         "CONFIRMED": and_(Bet.status == "CONFIRMED", MatchSnapshot.status != "FINISHED"),
         "AWAITING_SETTLEMENT": and_(Bet.status == "CONFIRMED", MatchSnapshot.status == "FINISHED"),
+        "WON": Bet.status == "WON",
+        "LOST": Bet.status == "LOST",
         "PAYMENT_REFUSED": Bet.status == "PAYMENT_REFUSED",
         "CANCELING": Bet.status == "CANCEL_PENDING",
         "REFUNDING": Bet.status == "REFUND_PENDING",
@@ -258,9 +262,10 @@ def build_refund_progress(match_id: UUID, db: Session) -> RefundProgressResponse
                                   pending=pending, completed=completed, failed=failed)
 
 
-def enqueue(db: Session, event_type: str, bet: Bet) -> None:
+def enqueue(db: Session, event_type: str, bet: Bet, amount_override: Decimal | None = None) -> None:
+    amount = amount_override if amount_override is not None else bet.stake_amount
     payload = {"eventId": str(uuid4()), "eventType": event_type, "betId": bet.id,
-               "userId": bet.user_id, "amount": str(bet.stake_amount)}
+               "userId": bet.user_id, "amount": str(amount)}
     db.add(OutboxEvent(id=str(uuid4()), topic=settings.kafka_bet_topic, event_key=bet.id,
                        payload=json.dumps(payload), created_at=now(), published_at=None))
 
@@ -371,6 +376,8 @@ def handle_match_event(db: Session, event_type: str | None, event: dict[str, Any
             "MATCH_CANCELED": "CANCELED",
         }.get(event_type, snapshot.status)
         snapshot.updated_at = now()
+    if event_type == "MATCH_ENDED" and snapshot is not None:
+        settle_bets(db, match_id, snapshot.home_team_goals, snapshot.away_team_goals)
     if event_type == "MATCH_CANCELED":
         handle_match_canceled(db, event)
 
@@ -414,3 +421,65 @@ def handle_wallet_event(db: Session, event_type: str | None, event: dict[str, An
     elif event_type == "PAYMENT_REFUND_FAILED" and bet.status == "REFUND_PENDING":
         bet.status = "REFUND_FAILED"
     bet.updated_at = now()
+
+
+def evaluate_bet(bet: Bet, r_home: int, r_away: int) -> tuple[int, int, int, int]:
+    b_home = bet.home_team_goals
+    b_away = bet.away_team_goals
+    
+    r_diff = r_home - r_away
+    b_diff = b_home - b_away
+    
+    r_tot = r_home + r_away
+    b_tot = b_home + b_away
+    
+    r_out = 1 if r_diff > 0 else (-1 if r_diff < 0 else 0)
+    b_out = 1 if b_diff > 0 else (-1 if b_diff < 0 else 0)
+    
+    c1 = 0 if (b_home == r_home and b_away == r_away) else 1
+    
+    if b_out == r_out:
+        c2 = 0
+        c3 = abs(b_diff - r_diff)
+    elif b_out == 0:
+        c2 = 1
+        c3 = 0
+    else:
+        c2 = 2
+        c3 = abs(b_diff)
+        
+    c4 = abs(b_tot - r_tot)
+    
+    return (c1, c2, c3, c4)
+
+
+def settle_bets(db: Session, match_id: str, final_home: int, final_away: int) -> None:
+    bets = db.scalars(select(Bet).where(Bet.match_id == match_id, Bet.status == "CONFIRMED").with_for_update()).all()
+    if not bets:
+        return
+        
+    total_pool = sum(bet.stake_amount for bet in bets)
+    
+    best_score = None
+    winners = []
+    
+    for bet in bets:
+        score = evaluate_bet(bet, final_home, final_away)
+        if best_score is None or score < best_score:
+            best_score = score
+            winners = [bet]
+        elif score == best_score:
+            winners.append(bet)
+            
+    winners_stake = sum(w.stake_amount for w in winners)
+    
+    for bet in bets:
+        if bet in winners:
+            bet.status = "WON"
+            share = (total_pool * bet.stake_amount) / winners_stake
+            minimum_prize = bet.stake_amount * Decimal("1.20")
+            prize = max(share, minimum_prize).quantize(Decimal("0.01"))
+            enqueue(db, "BET_SETTLED", bet, amount_override=prize)
+        else:
+            bet.status = "LOST"
+        bet.updated_at = now()
