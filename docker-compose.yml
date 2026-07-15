@@ -3,6 +3,35 @@
 
 services:
 
+  init-secrets:
+    image: alpine:latest
+    container_name: bolao-init-secrets
+    volumes:
+      - secrets_data:/run/secrets
+    command: >
+      sh -c "
+        apk add --no-cache openssl &&
+        if [ ! -f /run/secrets/jwt-private.pem ]; then
+          echo 'Generating secrets...';
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /run/secrets/jwt-private.pem;
+          openssl pkey -in /run/secrets/jwt-private.pem -pubout -out /run/secrets/jwt-public.pem;
+          echo -n 'admin' > /run/secrets/admin-password;
+          openssl rand -hex 32 > /run/secrets/payment-merchant-api-key;
+          openssl rand -hex 32 > /run/secrets/payment-webhook-secret;
+          openssl rand -hex 64 > /run/secrets/payment-secret-key-base;
+          chmod a+r /run/secrets/*;
+          echo 'Secrets generated successfully.';
+          echo '=======================================================';
+          echo \" ADMIN PASSWORD: \$(cat /run/secrets/admin-password)\";
+          echo '=======================================================';
+        else
+          echo 'Secrets already exist. Skipping.';
+          echo '=======================================================';
+          echo \" ADMIN PASSWORD: \$(cat /run/secrets/admin-password)\";
+          echo '=======================================================';
+        fi
+      "
+
   partidas-db:
     image: postgres:16-alpine
     container_name: bolao-partidas-db
@@ -75,8 +104,10 @@ services:
     expose:
       - "8081"
     volumes:
-      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       partidas-db:
         condition: service_healthy
       partidas-cache:
@@ -153,10 +184,10 @@ services:
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
-      - ./.secrets/payment-secret-key-base:/run/secrets/payment-secret-key-base:ro
-      - ./.secrets/payment-merchant-api-key:/run/secrets/payment-merchant-api-key:ro
-      - ./.secrets/payment-webhook-secret:/run/secrets/payment-webhook-secret:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       payment-simulator-db:
         condition: service_healthy
     healthcheck:
@@ -189,10 +220,10 @@ services:
     expose:
       - "8080"
     volumes:
-      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
-      - ./.secrets/payment-merchant-api-key:/run/secrets/payment-merchant-api-key:ro
-      - ./.secrets/payment-webhook-secret:/run/secrets/payment-webhook-secret:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       carteira-db:
         condition: service_healthy
       carteira-cache:
@@ -236,8 +267,10 @@ services:
     expose:
       - "8000"
     volumes:
-      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       apostas-db:
         condition: service_healthy
       kafka:
@@ -280,10 +313,10 @@ services:
     expose:
       - "8082"
     volumes:
-      - ./.secrets/jwt-private.pem:/run/secrets/jwt-private.pem:ro
-      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
-      - ./.secrets/admin-password:/run/secrets/admin-password:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       user-db:
         condition: service_healthy
 
@@ -305,8 +338,10 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./.secrets/jwt-public.pem:/run/secrets/jwt-public.pem:ro
+      - secrets_data:/run/secrets:ro
     depends_on:
+      init-secrets:
+        condition: service_completed_successfully
       partidas-service:
         condition: service_started
       carteira-service:
@@ -495,6 +530,7 @@ services:
         condition: service_started
 
 volumes:
+  secrets_data:
   partidas_db_data:
   carteira_db_data:
   apostas_db_data:
