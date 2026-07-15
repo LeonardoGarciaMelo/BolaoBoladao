@@ -11,14 +11,17 @@ import AdminShell from "../../components/templates/AdminShell.astro";
           <label>MANDANTE<input name="teamHomeName" list="team-options" required minlength="2" autocomplete="off" /></label>
           <label>VISITANTE<input name="teamAwayName" list="team-options" required minlength="2" autocomplete="off" /></label>
           <datalist id="team-options"></datalist>
-          <label>DATA E HORA LOCAL<input name="start" type="datetime-local" required /></label>
+          <div class="admin-datetime-fields">
+            <label>DATA<input name="startDate" type="date" aria-required="true" /></label>
+            <label>HORÁRIO<input name="startTime" type="time" step="60" aria-required="true" /></label>
+          </div>
           <p class="admin-form__hint" data-timezone></p>
           <p class="admin-form__message" data-match-message role="alert"></p>
           <button class="admin-action" type="submit">CRIAR PARTIDA</button>
         </form>
       </section>
       <section class="admin-card admin-match-list-card">
-        <header class="admin-card__header"><div><p>AGENDA</p><h2>Partidas cadastradas</h2></div><select data-status-filter aria-label="Filtrar por status"><option value="">TODAS</option><option>SCHEDULED</option><option>IN_PROGRESS</option><option>FINISHED</option><option>CANCELED</option></select></header>
+        <header class="admin-card__header"><div><p>AGENDA</p><h2>Partidas cadastradas</h2></div><select data-status-filter aria-label="Filtrar por status"><option value="">TODAS</option><option value="SCHEDULED">AGENDADAS</option><option value="IN_PROGRESS">AO VIVO</option><option value="FINISHED">ENCERRADAS</option><option value="CANCELED">CANCELADAS</option></select></header>
         <div class="admin-match-list" data-match-list><p class="admin-empty">Carregando partidas…</p></div>
       </section>
     </div>
@@ -36,6 +39,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
 
 <script>
   import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
+  import { matchStatusLabel, readApiError, refundStatusLabel } from "../../scripts/presentation";
   type Match = { id: string; teamHome: string; teamAway: string; start: string; status: string; cancelReason?: string };
   const list = document.querySelector<HTMLElement>("[data-match-list]");
   const form = document.querySelector<HTMLFormElement>("[data-match-form]");
@@ -69,7 +73,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
 
   const renderMatch = (match: Match) => {
     const row = document.createElement("article"); row.className = "admin-match-row";
-    const status = document.createElement("span"); status.className = `admin-status admin-status--${match.status.toLowerCase()}`; status.textContent = match.status;
+    const status = document.createElement("span"); status.className = `admin-status admin-status--${match.status.toLowerCase()}`; status.textContent = matchStatusLabel(match.status);
     const copy = document.createElement("div");
     const teams = document.createElement("strong"); teams.textContent = `${match.teamHome} × ${match.teamAway}`;
     const date = document.createElement("time"); date.textContent = formatter.format(new Date(match.start));
@@ -99,7 +103,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
       const response = await authenticatedFetch(`/admin/partidas/${matchId}/refunds`);
       if (response.ok) {
         const progress = await response.json();
-        target.textContent = `ESTORNOS: ${progress.status} · ${progress.completed}/${progress.total}`;
+        target.textContent = `ESTORNOS: ${refundStatusLabel(progress.status)} · ${progress.completed}/${progress.total}`;
         target.dataset.status = String(progress.status).toLowerCase();
         if (progress.status === "FAILED") { if (retry) retry.hidden = false; return; }
         if (progress.status === "COMPLETED") return;
@@ -113,12 +117,16 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     if (input.value.trim().length >= 2) void loadTeams(input.value.trim());
   }));
   form?.addEventListener("submit", async (event) => {
-    event.preventDefault(); if (!form.reportValidity() || !message) return;
-    const data = new FormData(form); const localStart = new Date(String(data.get("start")));
+    event.preventDefault(); if (!message) return;
+    const data = new FormData(form);
+    const startDate = String(data.get("startDate") || "");
+    const startTime = String(data.get("startTime") || "");
+    if (!startDate || !startTime) { message.textContent = "Informe a data e o horário da partida."; return; }
+    if (!form.reportValidity()) return;
+    const localStart = new Date(`${startDate}T${startTime}:00`);
     if (Number.isNaN(localStart.valueOf()) || localStart <= new Date()) { message.textContent = "Escolha um horário futuro válido."; return; }
     const response = await authenticatedFetch("/admin/partidas", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ teamHomeName: data.get("teamHomeName"), teamAwayName: data.get("teamAwayName"), start: localStart.toISOString() }) });
-    const result = await response.json().catch(() => ({}));
-    message.textContent = response.ok ? "Partida criada e adicionada à agenda." : result.message || "Não foi possível criar a partida.";
+    message.textContent = response.ok ? "Partida criada e adicionada à agenda." : await readApiError(response, "Não foi possível criar a partida.");
     if (response.ok) { form.reset(); await loadMatches(); }
   });
   cancelForm?.addEventListener("submit", async (event) => {
@@ -127,9 +135,8 @@ import AdminShell from "../../components/templates/AdminShell.astro";
     event.preventDefault(); if (!selectedMatch || !cancelForm.reportValidity()) return;
     const reason = String(new FormData(cancelForm).get("reason"));
     const response = await authenticatedFetch(`/admin/partidas/${selectedMatch.id}/cancel`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey() }, body: JSON.stringify({ reason }) });
-    const result = await response.json().catch(() => ({}));
     const cancelMessage = document.querySelector<HTMLElement>("[data-cancel-message]");
-    if (!response.ok) { if (cancelMessage) cancelMessage.textContent = result.message || "Não foi possível cancelar."; return; }
+    if (!response.ok) { if (cancelMessage) cancelMessage.textContent = await readApiError(response, "Não foi possível cancelar."); return; }
     dialog?.close(); cancelForm.reset(); selectedMatch = undefined; await loadMatches();
   });
   filter?.addEventListener("change", () => void loadMatches());

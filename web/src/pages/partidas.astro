@@ -29,9 +29,9 @@ import UserShell from "../components/templates/UserShell.astro";
       <p class="bet-form__kickoff" data-bet-kickoff></p>
       <fieldset class="bet-score-fields">
         <legend>PLACAR PREVISTO</legend>
-        <label><span data-home-label>Mandante</span><input name="homeGoals" type="number" min="0" max="30" inputmode="numeric" required /></label>
+        <label><span data-home-label>Mandante</span><span class="bet-goal-stepper"><button type="button" data-goal-action="decrease" data-goal-target="homeGoals" aria-label="Diminuir gols do mandante">−</button><input name="homeGoals" type="number" min="0" max="30" value="0" inputmode="numeric" required /><button type="button" data-goal-action="increase" data-goal-target="homeGoals" aria-label="Aumentar gols do mandante">＋</button></span></label>
         <b>×</b>
-        <label><span data-away-label>Visitante</span><input name="awayGoals" type="number" min="0" max="30" inputmode="numeric" required /></label>
+        <label><span data-away-label>Visitante</span><span class="bet-goal-stepper"><button type="button" data-goal-action="decrease" data-goal-target="awayGoals" aria-label="Diminuir gols do visitante">−</button><input name="awayGoals" type="number" min="0" max="30" value="0" inputmode="numeric" required /><button type="button" data-goal-action="increase" data-goal-target="awayGoals" aria-label="Aumentar gols do visitante">＋</button></span></label>
       </fieldset>
       <label class="bet-stake">VALOR DA APOSTA<div><span>R$</span><input name="stake" inputmode="decimal" placeholder="0,00" required /></div></label>
       <p class="bet-balance-copy">Saldo disponível: <strong data-bet-balance>R$ 0,00</strong></p>
@@ -63,6 +63,7 @@ import UserShell from "../components/templates/UserShell.astro";
 <script>
   import { authenticatedFetch, createIdempotencyKey } from "../scripts/session";
   import { formatCents, refreshWallet } from "../scripts/user";
+  import { matchStatusLabel, readApiError } from "../scripts/presentation";
 
   type Match = { id: string; teamHome: string; teamAway: string; teamHomeScore: number; teamAwayScore: number; start: string; end?: string; status: string; bettingOpen: boolean };
   type Page = { items: Match[]; page: number; size: number; total: number };
@@ -81,12 +82,34 @@ import UserShell from "../components/templates/UserShell.astro";
 
   const balanceCents = () => Number(document.querySelector<HTMLElement>("[data-user-balance]")?.dataset.balanceCents || 0);
   const parseCents = (value: string) => Math.round(Number(value.replace(/\./g, "").replace(",", ".")) * 100);
-  const statusLabel = (status: string) => ({ SCHEDULED: "AGENDADA", IN_PROGRESS: "AO VIVO", FINISHED: "ENCERRADA", CANCELED: "CANCELADA" }[status] || status);
-
+  const goalInputs = Array.from(document.querySelectorAll<HTMLInputElement>('.bet-goal-stepper input[type="number"]'));
+  const clampGoal = (value: number) => Math.max(0, Math.min(30, Number.isFinite(value) ? Math.round(value) : 0));
+  const syncGoalStepper = (input: HTMLInputElement, normalize = false) => {
+    const value = clampGoal(Number(input.value));
+    if (normalize) input.value = String(value);
+    const wrapper = input.closest<HTMLElement>(".bet-goal-stepper");
+    const decrease = wrapper?.querySelector<HTMLButtonElement>('[data-goal-action="decrease"]');
+    const increase = wrapper?.querySelector<HTMLButtonElement>('[data-goal-action="increase"]');
+    if (decrease) decrease.disabled = value <= 0;
+    if (increase) increase.disabled = value >= 30;
+  };
+  document.querySelectorAll<HTMLButtonElement>("[data-goal-action]").forEach((button) => button.addEventListener("click", () => {
+    const input = form?.elements.namedItem(button.dataset.goalTarget || "") as HTMLInputElement | null;
+    if (!input) return;
+    const delta = button.dataset.goalAction === "increase" ? 1 : -1;
+    input.value = String(clampGoal(Number(input.value) + delta));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  }));
+  goalInputs.forEach((input) => {
+    input.addEventListener("input", () => syncGoalStepper(input));
+    input.addEventListener("change", () => syncGoalStepper(input, true));
+    syncGoalStepper(input, true);
+  });
   const renderMatch = (match: Match) => {
     const article = document.createElement("article"); article.className = "user-match-card";
     const meta = document.createElement("div"); meta.className = "user-match-card__meta";
-    const badge = document.createElement("span"); badge.dataset.status = match.status.toLowerCase(); badge.textContent = statusLabel(match.status);
+    const badge = document.createElement("span"); badge.dataset.status = match.status.toLowerCase(); badge.textContent = matchStatusLabel(match.status);
     const time = document.createElement("time"); time.dateTime = match.start; time.textContent = dateTime.format(new Date(match.start)); meta.append(badge, time);
     const teams = document.createElement("div"); teams.className = "user-match-card__teams";
     const home = document.createElement("strong"); home.textContent = match.teamHome;
@@ -125,7 +148,7 @@ import UserShell from "../components/templates/UserShell.astro";
     if (form) form.hidden = step !== "form"; if (review) review.hidden = step !== "review"; if (result) result.hidden = step !== "result";
   };
   const openBet = (match: Match) => {
-    selected = match; pending = undefined; form?.reset(); showStep("form");
+    selected = match; pending = undefined; form?.reset(); goalInputs.forEach((input) => { input.value = "0"; syncGoalStepper(input); }); showStep("form");
     const heading = result?.querySelector("h3"); const copy = result?.querySelector("p"); const pulse = result?.querySelector<HTMLElement>(".bet-result__pulse");
     if (heading) heading.textContent = "Processando pagamento…"; if (copy) copy.textContent = "Aguarde enquanto confirmamos seu saldo."; if (pulse) pulse.hidden = false;
     document.querySelector<HTMLElement>("[data-bet-match]")!.textContent = `${match.teamHome} × ${match.teamAway}`;
@@ -165,8 +188,8 @@ import UserShell from "../components/templates/UserShell.astro";
     document.querySelector<HTMLElement>("[data-review-message]")!.textContent = "";
     try {
       const response = await authenticatedFetch("/bets", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.key }, body: JSON.stringify({ match_id: selected.id, home_team_goals: pending.home, away_team_goals: pending.away, stake_amount: (pending.stakeCents / 100).toFixed(2) }) });
-      const created = await response.json().catch(() => ({})) as Bet & { detail?: string; message?: string };
-      if (!response.ok) throw new Error(created.detail || created.message || "Não foi possível enviar o palpite.");
+      if (!response.ok) throw new Error(await readApiError(response, "Não foi possível enviar o palpite."));
+      const created = await response.json() as Bet;
       showStep("result"); const terminal = created.status === "PROCESSING" ? await pollBet(created.bet_id) : created;
       const heading = result?.querySelector("h3"); const copy = result?.querySelector("p"); const pulse = result?.querySelector<HTMLElement>(".bet-result__pulse");
       if (terminal?.status === "CONFIRMED" || terminal?.status === "AWAITING_SETTLEMENT") { if (heading) heading.textContent = "Palpite confirmado"; if (copy) copy.textContent = "O valor foi reservado na sua carteira."; if (pulse) pulse.hidden = true; await refreshWallet(); }

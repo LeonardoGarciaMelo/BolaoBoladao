@@ -266,6 +266,27 @@ services:
       api-gateway:
         condition: service_started
 
+  pgadmin:
+    profiles: ["tools"]
+    image: dpage/pgadmin4:latest
+    container_name: bolao-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      partidas-db:
+        condition: service_healthy
+      carteira-db:
+        condition: service_healthy
+      apostas-db:
+        condition: service_healthy
+      user-db:
+        condition: service_healthy
+
   partidas-test-db:
     profiles: ["test"]
     image: postgres:16-alpine
@@ -367,5 +388,6 @@ volumes:
   carteira_db_data:
   apostas_db_data:
   user_db_data:
+  pgadmin_data:
   maven_test_cache:
   pnpm_test_store:

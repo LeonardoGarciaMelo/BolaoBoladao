@@ -43,6 +43,27 @@ class CancellationSagaTest(unittest.TestCase):
             self.assertEqual(1, db.scalar(select(func.count(OutboxEvent.id))))
             self.assertEqual(1, db.scalar(select(func.count(ProcessedEvent.id))))
 
+    def test_same_legacy_event_id_from_different_matches_builds_both_projections(self) -> None:
+        first_match_id = str(uuid4())
+        second_match_id = str(uuid4())
+        base_event = {
+            "event_id": 42,
+            "event_type": "MATCH_CREATED",
+            "team_home": "Aurora",
+            "team_away": "Estrela",
+            "scheduled_start": "2026-07-20T20:00:00Z",
+            "score": {"team_home": 0, "team_away": 0},
+        }
+
+        main.handle_event(main.settings.kafka_match_topic, {**base_event, "match_id": first_match_id})
+        main.handle_event(main.settings.kafka_match_topic, {**base_event, "match_id": second_match_id})
+        main.handle_event(main.settings.kafka_match_topic, {**base_event, "match_id": first_match_id})
+
+        with self.sessions() as db:
+            self.assertIsNotNone(db.get(MatchSnapshot, first_match_id))
+            self.assertIsNotNone(db.get(MatchSnapshot, second_match_id))
+            self.assertEqual(2, db.scalar(select(func.count(ProcessedEvent.id))))
+
     def test_match_events_build_enriched_projection(self) -> None:
         match_id = str(uuid4())
         created = {

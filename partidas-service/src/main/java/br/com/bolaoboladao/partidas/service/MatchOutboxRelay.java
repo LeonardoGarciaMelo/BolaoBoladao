@@ -33,7 +33,7 @@ public class MatchOutboxRelay {
 
     public record ScoreDto(Integer team_home, Integer team_away) {}
     public record MatchDomainEvent(
-            Long event_id, // Identificador único do evento para deduplicação no consumidor
+            String event_id, // Identificador global e estável para deduplicação no consumidor
             UUID match_id,
             String event_type,
             String team_home,
@@ -104,7 +104,7 @@ public class MatchOutboxRelay {
 
     static MatchDomainEvent toDomainEvent(MatchEvent event) {
         return new MatchDomainEvent(
-                event.id,
+                event.match.id + ":" + event.id,
                 event.match.id,
                 event.eventType.name(),
                 event.match.teamHome.name,

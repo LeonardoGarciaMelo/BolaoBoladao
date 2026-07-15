@@ -93,6 +93,7 @@ pelo transactional outbox:
 ```json
 // tópico: match-events
 {
+  "event_id": "uuid-da-partida:sequência-local",
   "match_id": "uuid",
   "event_type": "MATCH_CREATED | MATCH_STARTED | TEAM_HOME_SCORED | TEAM_AWAY_SCORED | MATCH_ENDED | MATCH_CANCELED",
   "team_home": "nome do mandante",
@@ -107,6 +108,12 @@ pelo transactional outbox:
   "reason": "justificativa ou null"
 }
 ```
+
+`event_id` é uma string globalmente única no formato
+`<matchId>:<sequenceId>`. Apostas mantém compatibilidade de leitura com os IDs
+numéricos antigos e inclui `match_id` na chave de deduplicação desses eventos.
+Grupos novos do consumidor leem o tópico desde o primeiro offset disponível.
+No perfil de testes Java, a publicação é isolada em `match-events-test`.
 
 Ver `docs/adr/ADR-002-eventos-partida.md` para a decisão de quando e como
 essa publicação será feita (transactional outbox vs. publicação direta

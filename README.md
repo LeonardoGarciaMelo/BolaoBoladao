@@ -77,13 +77,16 @@ A web e a API estarão em `http://localhost:8080`: o gateway entrega a
 interface e encaminha as chamadas sob `/api`. Nenhum backend HTTP além do
 gateway publica porta no host quando executado pelo Compose.
 
-Este incremento altera as tabelas locais de Apostas e as projeções derivadas
-de eventos. Não há backfill dos dados anteriores. Em ambientes de
-desenvolvimento, recrie os volumes antes da primeira subida desta versão:
+Este incremento altera a identidade dos eventos de Partidas e as projeções
+derivadas em Apostas. Não há backfill dos dados anteriores. Em desenvolvimento,
+recrie somente os dados desses dois serviços e o container efêmero do Kafka;
+os volumes de Usuários, Carteira e pgAdmin são preservados:
 
 ```bash
-docker compose down -v
-docker compose up --build
+docker compose --profile tools --profile test down
+docker volume rm bolaoboladao_partidas_db_data bolaoboladao_apostas_db_data
+docker compose up --build -d
+docker compose --profile tools up -d pgadmin
 ```
 
 O fluxo é cadastro (`POST /api/auth/register`) → login
@@ -103,6 +106,27 @@ painel usa `GET /api/wallet/me` e
 `GET /api/wallet/me/statement?page=0&size=10`, sem aceitar identidade ou
 `walletId` do cliente. As rotas administrativas e legadas permanecem
 compatíveis.
+
+### Inspecionar os bancos com pgAdmin
+
+O perfil opcional `tools` disponibiliza o pgAdmin somente na interface local:
+
+```bash
+docker compose --profile tools up -d pgadmin
+```
+
+Acesse `http://localhost:5050` com `admin@local.dev` / `admin`. O login pode
+ser sobrescrito com `PGADMIN_DEFAULT_EMAIL` e `PGADMIN_DEFAULT_PASSWORD`.
+Cadastre os servidores na porta `5432`, usando usuário e senha `bolao`:
+
+| Serviço | Host | Banco |
+|---|---|---|
+| Partidas | `partidas-db` | `partidas_db` |
+| Carteira | `carteira-db` | `carteira_db` |
+| Apostas | `apostas-db` | `apostas_db` |
+| Usuários | `user-db` | `user_db` |
+
+O volume `pgadmin_data` preserva os servidores cadastrados entre reinícios.
 
 ## Painel do usuário
 
@@ -161,11 +185,13 @@ mvn -pl partidas-service -am -PC test -Dtest='!*ResourceTest'
 
 ```bash
 docker compose --profile test run --rm backend-tests
-docker compose --profile test run --rm apostas-tests
+docker compose --profile test run --build --rm apostas-tests
 docker compose --profile test run --rm web-e2e
 ```
 
 O Playwright usa `http://api-gateway:8080`, nunca um backend diretamente.
+Os testes Java publicam eventos de partida somente em `match-events-test`,
+mantendo o tópico de desenvolvimento `match-events` livre de dados da suíte.
 
 ## Endpoints administrativos — gateway
 

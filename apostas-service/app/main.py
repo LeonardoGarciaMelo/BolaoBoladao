@@ -301,6 +301,7 @@ async def consume_topic(topic: str, group_id: str) -> None:
     while not app.state.stop_event.is_set():
         consumer = AIOKafkaConsumer(topic, bootstrap_servers=settings.kafka_bootstrap_servers,
                                     group_id=group_id, enable_auto_commit=False,
+                                    auto_offset_reset="earliest",
                                     value_deserializer=lambda value: json.loads(value.decode("utf-8")))
         started = False
         try:
@@ -322,7 +323,8 @@ async def consume_topic(topic: str, group_id: str) -> None:
 def handle_event(topic: str, event: dict[str, Any]) -> None:
     event_type = event.get("event_type") or event.get("eventType")
     event_id = event.get("event_id") or f"{event_type}:{event.get('bet_id') or event.get('betId')}"
-    processed_id = f"{topic}:{event_id}"
+    entity_id = event.get("match_id") or event.get("bet_id") or event.get("betId") or "global"
+    processed_id = f"{topic}:{entity_id}:{event_id}"
     with SessionLocal() as db:
         if db.get(ProcessedEvent, processed_id) is not None:
             return

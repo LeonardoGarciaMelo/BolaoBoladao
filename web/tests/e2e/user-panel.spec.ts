@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { dialogBySelector, expectCenteredDialog } from "./helpers/dialog";
 
 const match = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -62,6 +63,14 @@ function bet(status: string, id: string) {
   };
 }
 
+async function submitMinimumBet(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  await page.getByRole("button", { name: "Aumentar gols do mandante" }).click();
+  await page.locator('[name="stake"]').fill("1,00");
+  await page.getByRole("button", { name: "REVISAR PALPITE" }).click();
+  await page.getByRole("button", { name: "CONFIRMAR PALPITE" }).click();
+}
+
 test("usuário revisa e confirma um palpite idempotente", async ({ page }) => {
   const forwardedKeys = await mockUserApis(page);
   await page.goto("/partidas");
@@ -72,8 +81,12 @@ test("usuário revisa e confirma um palpite idempotente", async ({ page }) => {
   await expect(page.locator("[data-match-list]")).toContainText("Aurora");
 
   await page.getByRole("button", { name: "FAZER PALPITE" }).click();
-  await page.locator('[name="homeGoals"]').fill("2");
-  await page.locator('[name="awayGoals"]').fill("1");
+  await expectCenteredDialog(dialogBySelector(page));
+  await expect(page.locator('[name="homeGoals"]')).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Diminuir gols do mandante" })).toBeDisabled();
+  await page.getByRole("button", { name: "Aumentar gols do mandante" }).click();
+  await page.getByRole("button", { name: "Aumentar gols do mandante" }).click();
+  await page.getByRole("button", { name: "Aumentar gols do visitante" }).click();
   await page.locator('[name="stake"]').fill("10,00");
   await page.getByRole("button", { name: "REVISAR PALPITE" }).click();
   await expect(page.locator("[data-bet-review]")).toContainText("R$ 10,00");
@@ -105,6 +118,80 @@ test("header e menu do avatar permanecem utilizáveis no mobile", async ({ page 
   await expect(page.getByRole("menuitem", { name: "Carteira" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Perfil" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.locator("[data-avatar-trigger]").click();
+  await page.getByRole("button", { name: "ADICIONAR SALDO" }).click();
+  await expectCenteredDialog(dialogBySelector(page));
+});
+
+test("stepper aceita teclado e digitação, respeita limites e reinicia o placar", async ({ page }) => {
+  await mockUserApis(page);
+  await page.goto("/partidas");
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+
+  const homeGoals = page.locator('[name="homeGoals"]');
+  const increaseHome = page.getByRole("button", { name: "Aumentar gols do mandante" });
+  await homeGoals.fill("30");
+  await expect(increaseHome).toBeDisabled();
+  await homeGoals.press("ArrowDown");
+  await expect(homeGoals).toHaveValue("29");
+  await expect(increaseHome).toBeEnabled();
+
+  await page.getByRole("button", { name: "Fechar" }).click();
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  await expect(homeGoals).toHaveValue("0");
+  await expect(page.getByRole("button", { name: "Diminuir gols do mandante" })).toBeDisabled();
+});
+
+test("diálogo de palpite permanece centralizado e sem overflow em 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await mockUserApis(page);
+  await page.goto("/partidas");
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  await expectCenteredDialog(dialogBySelector(page));
+  const dialog = page.getByRole("dialog");
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("diálogo alto usa rolagem interna e fecha com Escape", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 360 });
+  await mockUserApis(page);
+  await page.goto("/partidas");
+  await page.getByRole("button", { name: "FAZER PALPITE" }).click();
+  const dialog = dialogBySelector(page);
+  await expectCenteredDialog(dialog);
+  expect(await dialog.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+
+test("erro inglês da API de palpites é apresentado em português", async ({ page }) => {
+  await mockUserApis(page);
+  await page.route("**/api/bets", async (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({ status: 409, json: { detail: "Match is not available for bets" } });
+    }
+    return route.fallback();
+  });
+  await page.goto("/partidas");
+  await submitMinimumBet(page);
+  await expect(page.locator("[data-review-message]"))
+    .toHaveText("Esta partida ainda não está disponível para palpites. Atualize e tente novamente.");
+  await expect(page.locator("[data-review-message]")).not.toContainText("Match is not available");
+});
+
+test("erro inglês desconhecido usa fallback contextual em português", async ({ page }) => {
+  await mockUserApis(page);
+  await page.route("**/api/bets", async (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({ status: 500, json: { detail: "Unexpected internal English error" } });
+    }
+    return route.fallback();
+  });
+  await page.goto("/partidas");
+  await submitMinimumBet(page);
+  await expect(page.locator("[data-review-message]")).toHaveText("Não foi possível enviar o palpite.");
+  await expect(page.locator("[data-review-message]")).not.toContainText("Unexpected internal English error");
 });
 
 test("navega pelas quatro páginas, abre saldo e apresenta o extrato", async ({ page }) => {

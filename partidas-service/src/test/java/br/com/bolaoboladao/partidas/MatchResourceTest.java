@@ -8,6 +8,7 @@ import io.smallrye.jwt.algorithm.SignatureAlgorithm;
 import io.smallrye.jwt.build.Jwt;
 import io.smallrye.jwt.util.KeyUtils;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -18,6 +19,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 
 import static io.restassured.RestAssured.given;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -29,6 +31,14 @@ class MatchResourceTest {
 
     @Inject
     MatchCache matchCache;
+
+    @ConfigProperty(name = "mp.messaging.outgoing.match-events.topic")
+    String matchEventsTopic;
+
+    @Test
+    void deveIsolarEventosDosTestesEmTopicoProprio() {
+        assertEquals("match-events-test", matchEventsTopic);
+    }
 
     @Test
     void deveCriarPartidaIniciarMarcarGolEEncerrar() {
@@ -144,6 +154,8 @@ class MatchResourceTest {
 
     @Test
     void catalogoFiltraEstadosOrdenaEPagina() {
+        String open = createMatch("Catálogo Aberta A", "Catálogo Aberta B");
+
         String live = createMatch("Catálogo Ao Vivo A", "Catálogo Ao Vivo B");
         given().header("Authorization", "Bearer " + adminToken())
                 .when().post("/admin/partidas/{id}/iniciar", live).then().statusCode(200);
@@ -173,7 +185,9 @@ class MatchResourceTest {
         org.junit.jupiter.api.Assertions.assertTrue(openResponse.path("total") instanceof Number);
 
         java.util.List<String> starts = given().when().get("/partidas/catalog?view=OPEN&page=0&size=50")
-                .then().statusCode(200).extract().jsonPath().getList("items.start", String.class);
+                .then().statusCode(200)
+                .body("items.find { it.id == '%s' }.status".formatted(open), equalTo("SCHEDULED"))
+                .extract().jsonPath().getList("items.start", String.class);
         var parsedStarts = starts.stream().map(OffsetDateTime::parse).toList();
         org.junit.jupiter.api.Assertions.assertEquals(parsedStarts.stream().sorted().toList(), parsedStarts);
 

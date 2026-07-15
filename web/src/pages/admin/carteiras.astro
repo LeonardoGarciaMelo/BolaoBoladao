@@ -34,6 +34,7 @@ import AdminShell from "../../components/templates/AdminShell.astro";
 
 <script>
   import { authenticatedFetch, createIdempotencyKey, requireAdmin } from "../../scripts/session";
+  import { readApiError } from "../../scripts/presentation";
   type User = { id: string; name: string; username: string };
   type Wallet = { userId: string; walletId: string; balanceCents: number };
   let selectedUser: User | undefined; let selectedWallet: Wallet | undefined; let pending: { amountCents: number; reason: string; idempotencyKey: string } | undefined;
@@ -77,8 +78,9 @@ import AdminShell from "../../components/templates/AdminShell.astro";
   document.querySelector("[data-credit-back]")?.addEventListener("click", () => reviewDialog?.close());
   document.querySelector("[data-credit-confirm]")?.addEventListener("click", async () => {
     if (!selectedUser || !pending) return; const button = document.querySelector<HTMLButtonElement>("[data-credit-confirm]")!; button.disabled = true;
-    const response = await authenticatedFetch(`/admin/wallets/users/${selectedUser.id}/credits`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.idempotencyKey }, body: JSON.stringify({ amountCents: pending.amountCents, reason: pending.reason }) }); const result = await response.json().catch(() => ({})); button.disabled = false;
-    if (!response.ok) { document.querySelector<HTMLElement>("[data-dialog-message]")!.textContent = result.message || result.error || "Não foi possível registrar o crédito."; return; }
+    const response = await authenticatedFetch(`/admin/wallets/users/${selectedUser.id}/credits`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.idempotencyKey }, body: JSON.stringify({ amountCents: pending.amountCents, reason: pending.reason }) }); button.disabled = false;
+    if (!response.ok) { document.querySelector<HTMLElement>("[data-dialog-message]")!.textContent = await readApiError(response, "Não foi possível registrar o crédito."); return; }
+    const result = await response.json();
     selectedWallet = { userId: result.userId, walletId: result.walletId, balanceCents: result.balanceAfterCents }; pending = undefined; reviewDialog?.close(); creditForm?.reset(); document.querySelector<HTMLElement>("[data-receipt-copy]")!.textContent = `${formatCents(result.amountCents)} creditados para @${selectedUser.username}. Novo saldo: ${formatCents(result.balanceAfterCents)}.`; document.querySelector<HTMLElement>("[data-receipt-id]")!.textContent = result.ledgerEntryId; receiptDialog?.showModal(); await selectUser(selectedUser);
   });
   document.querySelector("[data-receipt-close]")?.addEventListener("click", () => receiptDialog?.close());
